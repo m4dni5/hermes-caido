@@ -33,11 +33,21 @@ def _ensure_sdk() -> bool:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        subprocess.check_call(
+    except subprocess.CalledProcessError as exc:
+        logger.warning("Caido plugin: ensurepip failed: %s", exc)
+
+    try:
+        result = subprocess.run(
             [sys.executable, "-m", "pip", "install", _SDK_PACKAGE, "--quiet"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            capture_output=True,
+            text=True,
         )
+        if result.returncode != 0:
+            logger.error(
+                "Caido plugin: pip install failed (rc=%d)\nstdout: %s\nstderr: %s",
+                result.returncode, result.stdout, result.stderr,
+            )
+            return False
         importlib.import_module("caido_sdk_client")
         logger.info("Caido plugin: %s installed successfully", _SDK_PACKAGE)
         return True
