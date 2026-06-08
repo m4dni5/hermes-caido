@@ -102,9 +102,10 @@ def _load_cached_token() -> bool:
 
     try:
         data = json.loads(_TOKEN_CACHE.read_text())
-        _access_token = data.get("accessToken")
-        _refresh_token = data.get("refreshToken")
-        expires_str = data.get("expiresAt")
+        # Support both camelCase (TS CLI) and snake_case (old caido-py)
+        _access_token = data.get("accessToken") or data.get("access_token")
+        _refresh_token = data.get("refreshToken") or data.get("refresh_token")
+        expires_str = data.get("expiresAt") or data.get("expires_at")
         if expires_str:
             _expires_at = datetime.fromisoformat(expires_str.replace("Z", "+00:00"))
         return _access_token is not None and (
