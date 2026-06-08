@@ -32,20 +32,17 @@ DELETE_SCOPE_MUTATION = """mutation DeleteScope($id: ID!) {
 
 # ─── Filters ─────────────────────────────────────────────────────────────────
 
-FILTERS_QUERY = """query Filters { filters { id name alias clause kind } }"""
+FILTERS_QUERY = """query FilterPresets { filterPresets { id name alias clause { __typename ... on HTTPQL { code } } } }"""
 
-CREATE_FILTER_MUTATION = """mutation CreateFilter($input: CreateFilterInput!) {
-  createFilter(input: $input) {
-    error { __typename ... on NameTakenUserError { message } ... on OtherUserError { message } }
+CREATE_FILTER_MUTATION = """mutation CreateFilterPreset($input: CreateFilterPresetInput!) {
+  createFilterPreset(input: $input) {
+    error { __typename ... on NameTakenUserError { message } ... on AliasTakenUserError { message } ... on PermissionDeniedUserError { message } ... on OtherUserError { message } }
     filter { id name }
   }
 }"""
 
-DELETE_FILTER_MUTATION = """mutation DeleteFilter($id: ID!) {
-  deleteFilter(id: $id) {
-    deletedId
-    error { __typename ... on UnknownIdUserError { message } ... on OtherUserError { message } }
-  }
+DELETE_FILTER_MUTATION = """mutation DeleteFilterPreset($id: ID!) {
+  deleteFilterPreset(id: $id) { deletedId }
 }"""
 
 
@@ -182,15 +179,15 @@ async def delete_scope(scope_id, client=None) -> dict:
 async def filters(limit=50, client=None) -> list:
     try:
         result = await graphql(FILTERS_QUERY)
-        return result.get("filters", [])
+        return result.get("filterPresets", [])
     except Exception as e:
         return {"error": str(e)}
 
 
 async def create_filter(name, httpql, client=None) -> dict:
     try:
-        result = await graphql(CREATE_FILTER_MUTATION, {"input": {"name": name, "httpql": httpql}})
-        payload = result.get("createFilter", {})
+        result = await graphql(CREATE_FILTER_MUTATION, {"input": {"name": name, "alias": name.lower().replace(" ", "-"), "clause": {"HTTPQL": {"code": httpql}}}})
+        payload = result.get("createFilterPreset", {})
         err_msg = _check_error(payload)
         if err_msg:
             return {"error": err_msg}
@@ -202,7 +199,7 @@ async def create_filter(name, httpql, client=None) -> dict:
 async def delete_filter(filter_id, client=None) -> dict:
     try:
         result = await graphql(DELETE_FILTER_MUTATION, {"id": filter_id})
-        return _extract_deleted(result.get("deleteFilter", {}))
+        return _extract_deleted(result.get("deleteFilterPreset", {}))
     except Exception as e:
         return {"error": str(e)}
 
