@@ -1,0 +1,10 @@
+name: caido
+version: 0.1.0
+description: Caido HTTP proxy integration — search requests, replay, manage findings, scopes, filters, and sessions
+author: matt
+requires_env:
+  - name: CAIDO_PAT
+    description: "Caido Personal Access Token"
+    secret: true
+  - name: CAIDO_URL
+    description: "Caido instance URL (e.g. http://127.0.0.1:8081)"
