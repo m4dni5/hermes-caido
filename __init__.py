@@ -27,6 +27,12 @@ def _ensure_sdk() -> bool:
 
     logger.info("Caido plugin: installing %s ...", _SDK_PACKAGE)
     try:
+        # Ensure pip is available in the venv (stdlib, always present)
+        subprocess.check_call(
+            [sys.executable, "-m", "ensurepip", "--upgrade", "--quiet"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         subprocess.check_call(
             [sys.executable, "-m", "pip", "install", _SDK_PACKAGE, "--quiet"],
             stdout=subprocess.DEVNULL,
