@@ -42,6 +42,7 @@ def register(ctx) -> None:  # noqa: ANN001 — plugin context type
             schema=schema,
             handler=handler,
             description=description,
+            is_async=True,
         )
         logger.debug("Registered tool: %s", name)
 

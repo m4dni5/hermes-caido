@@ -2,6 +2,22 @@ name: caido
 version: 0.1.0
 description: Caido HTTP proxy integration — search requests, replay, manage findings, scopes, filters, and sessions
 author: matt
+provides_tools:
+  - caido_search
+  - caido_recent
+  - caido_get
+  - caido_replay
+  - caido_send_raw
+  - caido_sessions
+  - caido_create_session
+  - caido_collections
+  - caido_findings
+  - caido_create_finding
+  - caido_scopes
+  - caido_filters
+  - caido_envs
+  - caido_projects
+  - caido_health
 requires_env:
   - name: CAIDO_PAT
     description: "Caido Personal Access Token"
