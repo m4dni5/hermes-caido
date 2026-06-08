@@ -74,7 +74,7 @@ async def list_findings(query=None, limit=50, client=None):
     data = await graphql(
         FINDINGS_QUERY,
         variables={"first": limit},
-        client=client,
+
     )
     edges = data.get("findings", {}).get("edges", [])
     findings = [e["node"] for e in edges if e.get("node")]
@@ -91,7 +91,7 @@ async def get_finding(finding_id, client=None):
     data = await graphql(
         GET_FINDING_QUERY,
         variables={"id": finding_id},
-        client=client,
+
     )
     return data.get("finding", {})
 
@@ -117,7 +117,7 @@ async def create_finding(title, description=None, severity=None, request_id=None
     data = await graphql(
         CREATE_FINDING_MUTATION,
         variables={"requestId": request_id, "input": input_fields},
-        client=client,
+
     )
     result = data.get("createFinding", {})
     if result.get("error"):
@@ -147,7 +147,7 @@ async def update_finding(finding_id, title=None, description=None, severity=None
     data = await graphql(
         UPDATE_FINDING_MUTATION,
         variables={"id": finding_id, "input": input_fields},
-        client=client,
+
     )
     result = data.get("updateFinding", {})
     if result.get("error"):

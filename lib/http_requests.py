@@ -229,7 +229,7 @@ async def recent(
 ) -> dict[str, Any]:
     """Return the most recent requests (sorted by createdAt DESC)."""
     return await search(
-        query="", limit=limit, sort="createdAt", order="DESC", client=client
+        query="", limit=limit, sort="createdAt", order="DESC"
     )
 
 

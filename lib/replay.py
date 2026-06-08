@@ -19,7 +19,6 @@ from client import graphql  # noqa: E402
 _FRAGMENT_REPLAY_SESSION_META = """fragment ReplaySessionMeta on ReplaySession {
   id
   name
-  activeEntry { id }
 }"""
 
 _FRAGMENT_REPLAY_SESSION_COLLECTION_META = """fragment ReplaySessionCollectionMeta on ReplaySessionCollection {
@@ -148,7 +147,7 @@ async def send_raw(
     """
     try:
         # Step 1: Create a replay session for this request
-        session_result = await create_session(name=f"replay-{host}", client=client)
+        session_result = await create_session(name=f"replay-{host}")
         if "error" in session_result:
             return session_result
 
