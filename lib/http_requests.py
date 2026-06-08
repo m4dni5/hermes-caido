@@ -207,7 +207,7 @@ async def search(
         # Sorting
         by = _SORT_MAP.get(sort, "CREATED_AT") if sort else "CREATED_AT"
         direction = _ORDER_MAP.get((order or "DESC").upper(), "DESC")
-        variables["order"] = {"by": by, "direction": direction}
+        variables["order"] = {"by": by, "ordering": direction}
 
         data = await gql(_SEARCH_REQUESTS, variables)
         requests_data = data.get("requests", {})
