@@ -1,21 +1,22 @@
 """Caido GraphQL client — raw HTTP, no SDK dependency.
 
-Authentication uses the OAuth2 device code flow via caido.io, matching
-the Caido SDK's PATApprover pattern.  Caches access/refresh tokens at
-~/.config/caido-py/secrets.json for reuse across sessions.
+Authentication replicates the Caido SDK's OAuth2 device code flow:
+1. startAuthenticationFlow mutation → user_code + request_id
+2. PATApprover: approve via caido.io cloud API using PAT
+3. createdAuthenticationToken subscription (websocket) → access token
+4. refreshAuthenticationToken mutation → token refresh
 
-Credential resolution order:
-  1. Environment variables (CAIDO_PAT, CAIDO_URL)
-  2. ~/.hermes/.env
-  3. ~/.claude/config/secrets.json (caido key — shared with TS CLI)
+Token cache at ~/.config/caido-py/secrets.json.
+Reads PAT from env/secrets (same resolution as before).
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -34,10 +35,48 @@ _CLOUD_API = "https://api.caido.io"
 # ── singleton state ────────────────────────────────────────────────────
 
 _session: aiohttp.ClientSession | None = None
+_ws_session: aiohttp.ClientSession | None = None
 _url: str | None = None
 _access_token: str | None = None
 _refresh_token: str | None = None
 _expires_at: datetime | None = None
+
+# ── GraphQL documents ─────────────────────────────────────────────────
+
+START_AUTH_FLOW = """
+mutation StartAuthenticationFlow {
+    startAuthenticationFlow {
+        request { id userCode verificationUrl expiresAt }
+        error { ... on AuthenticationUserError { code reason }
+                ... on CloudUserError { code reason }
+                ... on InternalUserError { code message }
+                ... on OtherUserError { code } }
+    }
+}
+"""
+
+REFRESH_TOKEN = """
+mutation RefreshAuthenticationToken($refreshToken: Token!) {
+    refreshAuthenticationToken(refreshToken: $refreshToken) {
+        token { accessToken expiresAt refreshToken scopes }
+        error { ... on AuthenticationUserError { code reason }
+                ... on CloudUserError { code reason }
+                ... on InternalUserError { code message }
+                ... on OtherUserError { code } }
+    }
+}
+"""
+
+CREATED_TOKEN_SUB = """
+subscription CreatedAuthenticationToken($requestId: ID!) {
+    createdAuthenticationToken(requestId: $requestId) {
+        token { accessToken expiresAt refreshToken scopes }
+        error { ... on AuthenticationUserError { code reason }
+                ... on InternalUserError { code message }
+                ... on OtherUserError { code } }
+    }
+}
+"""
 
 
 # ── credential resolution ──────────────────────────────────────────────
@@ -58,65 +97,79 @@ def _load_dotenv(path: Path) -> dict[str, str]:
     return env
 
 
-def _resolve_credentials() -> tuple[str, str]:
-    """Return (pat, url) from env/secrets. Raises RuntimeError if missing."""
+def _resolve_pat() -> str:
+    """Return PAT from env/secrets. Raises RuntimeError if missing."""
     pat = os.environ.get("CAIDO_PAT")
-    url = os.environ.get("CAIDO_URL")
-    if pat and url:
-        return pat, url
+    if pat:
+        return pat
 
     dotenv = _load_dotenv(_HERMES_ENV)
     pat = pat or dotenv.get("CAIDO_PAT")
-    url = url or dotenv.get("CAIDO_URL")
 
-    if (not pat or not url) and _CLAUDE_SECRETS.is_file():
+    if not pat and _CLAUDE_SECRETS.is_file():
         try:
             secrets = json.loads(_CLAUDE_SECRETS.read_text())
-            caido = secrets.get("caido", {})
-            pat = pat or caido.get("pat")
-            url = url or caido.get("url")
+            pat = pat or secrets.get("caido", {}).get("pat")
         except Exception:
             pass
 
-    missing: list[str] = []
     if not pat:
-        missing.append("CAIDO_PAT")
+        raise RuntimeError(f"Missing CAIDO_PAT. Set as env var or in {_HERMES_ENV}.")
+    return pat
+
+
+def _resolve_url() -> str:
+    """Return Caido instance URL from env/secrets."""
+    url = os.environ.get("CAIDO_URL")
+    if url:
+        return url
+
+    dotenv = _load_dotenv(_HERMES_ENV)
+    url = url or dotenv.get("CAIDO_URL")
+
+    if not url and _CLAUDE_SECRETS.is_file():
+        try:
+            secrets = json.loads(_CLAUDE_SECRETS.read_text())
+            url = url or secrets.get("caido", {}).get("url")
+        except Exception:
+            pass
+
     if not url:
-        missing.append("CAIDO_URL")
-    if missing:
-        raise RuntimeError(
-            f"Missing credential(s): {', '.join(missing)}. "
-            f"Set as env vars or in {_HERMES_ENV}."
-        )
-    return pat, url  # type: ignore[return-value]
+        raise RuntimeError(f"Missing CAIDO_URL. Set as env var or in {_HERMES_ENV}.")
+    return url
 
 
 # ── token cache ────────────────────────────────────────────────────────
 
 def _load_cached_token() -> bool:
-    """Load cached access/refresh token. Returns True if valid and not expired."""
+    """Load cached token. Returns True if valid and not expired."""
     global _access_token, _refresh_token, _expires_at
 
-    if not _TOKEN_CACHE.is_file():
-        return False
+    for cache_path in [_TOKEN_CACHE, _CLAUDE_SECRETS]:
+        if not cache_path.is_file():
+            continue
+        try:
+            data = json.loads(cache_path.read_text())
+            if cache_path == _CLAUDE_SECRETS:
+                data = data.get("caido", {}).get("cachedToken", {})
 
-    try:
-        data = json.loads(_TOKEN_CACHE.read_text())
-        # Support both camelCase (TS CLI) and snake_case (old caido-py)
-        _access_token = data.get("accessToken") or data.get("access_token")
-        _refresh_token = data.get("refreshToken") or data.get("refresh_token")
-        expires_str = data.get("expiresAt") or data.get("expires_at")
-        if expires_str:
-            _expires_at = datetime.fromisoformat(expires_str.replace("Z", "+00:00"))
-        return _access_token is not None and (
-            _expires_at is None or _expires_at > datetime.now(timezone.utc)
-        )
-    except Exception:
-        return False
+            _access_token = data.get("accessToken") or data.get("access_token")
+            _refresh_token = data.get("refreshToken") or data.get("refresh_token")
+            expires_str = data.get("expiresAt") or data.get("expires_at")
+            if expires_str:
+                _expires_at = datetime.fromisoformat(expires_str.replace("Z", "+00:00"))
+
+            if _access_token and (_expires_at is None or _expires_at > datetime.now(timezone.utc)):
+                if cache_path == _CLAUDE_SECRETS:
+                    _save_cached_token()  # copy to our cache
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def _save_cached_token() -> None:
-    """Persist access/refresh token to cache."""
+    """Persist token to cache."""
     _TOKEN_CACHE.parent.mkdir(parents=True, exist_ok=True)
     data: dict[str, Any] = {}
     if _access_token:
@@ -128,182 +181,175 @@ def _save_cached_token() -> None:
     _TOKEN_CACHE.write_text(json.dumps(data, indent=2))
 
 
-def _load_claude_cached_token() -> bool:
-    """Try loading cached token from ~/.claude/config/secrets.json (TS CLI cache)."""
-    global _access_token, _refresh_token, _expires_at
+# ── OAuth2 device code flow (via GraphQL + websocket) ─────────────────
 
-    if not _CLAUDE_SECRETS.is_file():
-        return False
-
-    try:
-        data = json.loads(_CLAUDE_SECRETS.read_text())
-        caido = data.get("caido", {})
-        cached = caido.get("cachedToken", {})
-        _access_token = cached.get("accessToken")
-        _refresh_token = cached.get("refreshToken")
-        expires_str = cached.get("expiresAt")
-        if expires_str:
-            _expires_at = datetime.fromisoformat(expires_str.replace("Z", "+00:00"))
-        if _access_token and (_expires_at is None or _expires_at > datetime.now(timezone.utc)):
-            _save_cached_token()  # copy to our own cache
-            return True
-    except Exception:
-        pass
-    return False
+async def _gql_raw(url: str, query: str, variables: dict | None = None) -> dict[str, Any]:
+    """Execute a raw GraphQL request (no auth header)."""
+    async with aiohttp.ClientSession() as s:
+        payload: dict[str, Any] = {"query": query}
+        if variables:
+            payload["variables"] = variables
+        async with s.post(f"{url}/graphql", json=payload) as resp:
+            data = await resp.json()
+            if "errors" in data:
+                raise RuntimeError(f"GraphQL errors: {data['errors']}")
+            return data.get("data", {})
 
 
-# ── OAuth2 device code flow ────────────────────────────────────────────
-
-async def _exchange_pat_for_token(pat: str, session: aiohttp.ClientSession) -> bool:
-    """Exchange PAT for access token via caido.io OAuth2 device flow.
-
-    This replicates the Caido SDK's PATApprover pattern:
-    1. Start device code flow against the Caido instance
-    2. Auto-approve using the PAT via caido.io
-    3. Poll for the access token
-    """
-    global _access_token, _refresh_token, _expires_at
-
-    # Step 1: Start device code flow on the Caido instance
-    async with session.post(
-        f"{_url}/oauth2/device/code",
-        json={"client_id": "caido-sdk", "scope": "read write"},
-    ) as resp:
-        if resp.status != 200:
-            logger.error("Device code flow failed to start: %d", resp.status)
-            return False
-        device_data = await resp.json()
-
-    user_code = device_data.get("user_code")
-    device_code = device_data.get("device_code")
-    interval = device_data.get("interval", 5)
-
-    if not user_code or not device_code:
-        logger.error("Missing user_code or device_code in response")
-        return False
-
-    # Step 2: Auto-approve via caido.io using PAT
+async def _approve_via_cloud(pat: str, user_code: str) -> None:
+    """Approve device code via caido.io using PAT."""
     approve_url = f"{_CLOUD_API}/oauth2/device/approve"
     query = urlencode({"user_code": user_code, "scope": "read,write"})
-    async with session.post(
-        f"{approve_url}?{query}",
-        headers={
-            "Authorization": f"Bearer {pat}",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        },
-    ) as resp:
-        if resp.status < 200 or resp.status >= 300:
-            logger.error("PAT approval failed: %d %s", resp.status, await resp.text())
-            return False
-
-    # Step 3: Poll for token
-    token_url = f"{_url}/oauth2/token"
-    for _ in range(30):  # max 30 polls
-        import asyncio
-        await asyncio.sleep(interval)
-        async with session.post(
-            token_url,
-            data={
-                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-                "device_code": device_code,
-                "client_id": "caido-sdk",
+    async with aiohttp.ClientSession() as s:
+        async with s.post(
+            f"{approve_url}?{query}",
+            headers={
+                "Authorization": f"Bearer {pat}",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
             },
         ) as resp:
-            if resp.status == 200:
-                token_data = await resp.json()
-                _access_token = token_data.get("access_token")
-                _refresh_token = token_data.get("refresh_token")
-                expires_in = token_data.get("expires_in")
-                if expires_in:
-                    from datetime import timedelta
-                    _expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
-                _save_cached_token()
-                return True
-            body = await resp.json()
-            if body.get("error") == "authorization_pending":
-                continue
-            logger.error("Token poll error: %s", body)
-            return False
-
-    logger.error("Token poll timed out")
-    return False
+            if resp.status < 200 or resp.status >= 300:
+                body = await resp.text()
+                raise RuntimeError(f"PAT approval failed ({resp.status}): {body[:300]}")
 
 
-async def _refresh_access_token(session: aiohttp.ClientSession) -> bool:
+async def _wait_for_token_ws(url: str, request_id: str) -> dict[str, Any]:
+    """Subscribe to createdAuthenticationToken via websocket."""
+    ws_url = url.replace("https://", "wss://").replace("http://", "ws://")
+    ws_url = f"{ws_url}/ws/graphql"
+
+    async with aiohttp.ClientSession() as s:
+        async with s.ws_connect(ws_url) as ws:
+            # Send subscription
+            await ws.send_json({
+                "id": "1",
+                "type": "start",
+                "payload": {
+                    "query": CREATED_TOKEN_SUB,
+                    "variables": {"requestId": request_id},
+                },
+            })
+
+            # Wait for data
+            async for msg in ws:
+                if msg.type == aiohttp.WSMsgType.TEXT:
+                    data = json.loads(msg.data)
+                    if data.get("type") == "data":
+                        payload = data.get("payload", {}).get("data", {}).get("createdAuthenticationToken", {})
+                        if payload.get("token"):
+                            return payload["token"]
+                        if payload.get("error"):
+                            raise RuntimeError(f"Auth error: {payload['error']}")
+                elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSED):
+                    break
+
+    raise RuntimeError("WebSocket closed without receiving token")
+
+
+async def _do_device_flow(url: str, pat: str) -> None:
+    """Full device code flow: start → approve → wait for token."""
+    global _access_token, _refresh_token, _expires_at
+
+    # Step 1: Start auth flow
+    data = await _gql_raw(url, START_AUTH_FLOW)
+    payload = data.get("startAuthenticationFlow", {})
+    if payload.get("error"):
+        raise RuntimeError(f"Auth flow start error: {payload['error']}")
+
+    request = payload.get("request", {})
+    user_code = request.get("userCode")
+    request_id = request.get("id")
+
+    if not user_code or not request_id:
+        raise RuntimeError(f"Missing userCode/requestId in auth response: {payload}")
+
+    logger.info("Caido auth: approving device code %s", user_code)
+
+    # Step 2: Approve via caido.io
+    await _approve_via_cloud(pat, user_code)
+
+    # Step 3: Wait for token via websocket
+    token = await _wait_for_token_ws(url, request_id)
+
+    _access_token = token.get("accessToken")
+    _refresh_token = token.get("refreshToken")
+    expires_str = token.get("expiresAt")
+    if expires_str:
+        _expires_at = datetime.fromisoformat(expires_str.replace("Z", "+00:00"))
+
+    _save_cached_token()
+    logger.info("Caido auth: token acquired, expires at %s", _expires_at)
+
+
+async def _do_token_refresh(url: str) -> bool:
     """Refresh the access token using the refresh token."""
     global _access_token, _refresh_token, _expires_at
 
     if not _refresh_token:
         return False
 
-    token_url = f"{_url}/oauth2/token"
-    async with session.post(
-        token_url,
-        data={
-            "grant_type": "refresh_token",
-            "refresh_token": _refresh_token,
-            "client_id": "caido-sdk",
-        },
-    ) as resp:
-        if resp.status != 200:
+    try:
+        data = await _gql_raw(url, REFRESH_TOKEN, {"refreshToken": _refresh_token})
+        payload = data.get("refreshAuthenticationToken", {})
+        if payload.get("error"):
+            logger.warning("Token refresh error: %s", payload["error"])
             return False
-        token_data = await resp.json()
-        _access_token = token_data.get("access_token")
-        _refresh_token = token_data.get("refresh_token") or _refresh_token
-        expires_in = token_data.get("expires_in")
-        if expires_in:
-            from datetime import timedelta
-            _expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+
+        token = payload.get("token", {})
+        _access_token = token.get("accessToken")
+        _refresh_token = token.get("refreshToken") or _refresh_token
+        expires_str = token.get("expiresAt")
+        if expires_str:
+            _expires_at = datetime.fromisoformat(expires_str.replace("Z", "+00:00"))
         _save_cached_token()
         return True
+    except Exception as exc:
+        logger.warning("Token refresh failed: %s", exc)
+        return False
 
 
 # ── session management ─────────────────────────────────────────────────
 
+async def _ensure_auth() -> tuple[str, str]:
+    """Ensure we have a valid access token. Returns (url, access_token)."""
+    global _url, _access_token
+
+    _url = _resolve_url()
+
+    # Try cached token
+    if _load_cached_token() and _access_token:
+        return _url, _access_token
+
+    # Try refresh
+    if _refresh_token and await _do_token_refresh(_url) and _access_token:
+        return _url, _access_token
+
+    # Full device code flow
+    pat = _resolve_pat()
+    await _do_device_flow(_url, pat)
+    if not _access_token:
+        raise RuntimeError("Failed to acquire access token")
+    return _url, _access_token
+
+
 async def _get_session() -> tuple[aiohttp.ClientSession, str]:
     global _session, _url, _access_token
 
-    if _session and not _session.closed and _access_token:
-        return _session, _url  # type: ignore[return-value]
+    url, token = await _ensure_auth()
 
-    pat, _url = _resolve_credentials()
+    if _session and not _session.closed:
+        # Update token in case it was refreshed
+        _session.headers.update({"Authorization": f"Bearer {token}"})
+        return _session, url
 
-    # Try loading cached token (our cache first, then TS CLI's cache)
-    has_token = _load_cached_token() or _load_claude_cached_token()
-
-    if not has_token:
-        # Need to do the full device code flow
-        _session = aiohttp.ClientSession()
-        success = await _exchange_pat_for_token(pat, _session)
-        if not success:
-            await _session.close()
-            raise RuntimeError("Failed to authenticate with Caido")
-
-    # Check if token is expired, try refresh
-    if _expires_at and _expires_at <= datetime.now(timezone.utc):
-        if _session is None:
-            _session = aiohttp.ClientSession()
-        if not await _refresh_access_token(_session):
-            # Refresh failed, re-authenticate
-            success = await _exchange_pat_for_token(pat, _session)
-            if not success:
-                raise RuntimeError("Failed to re-authenticate with Caido")
-
-    if _session is None:
-        _session = aiohttp.ClientSession(
-            headers={
-                "Authorization": f"Bearer {_access_token}",
-                "Content-Type": "application/json",
-            },
-        )
-    else:
-        _session.headers.update({
-            "Authorization": f"Bearer {_access_token}",
+    _session = aiohttp.ClientSession(
+        headers={
+            "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
-        })
-
-    return _session, _url  # type: ignore[return-value]
+        },
+    )
+    return _session, url
 
 
 # ── API calls ──────────────────────────────────────────────────────────
@@ -331,7 +377,6 @@ async def health() -> dict[str, Any]:
         data = await graphql("query { health { status version } }")
         return data.get("health", {})
     except Exception:
-        # Fallback: try REST
         session, url = await _get_session()
         async with session.get(f"{url}/") as resp:
             return {"status": "ok" if resp.status == 200 else "error", "statusCode": resp.status}
