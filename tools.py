@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "lib"))
 
-from requests import search, recent, get, get_response, export_curl
+from http_requests import search, recent, get, get_response, export_curl
 from replay import replay, send_raw, sessions, create_session, collections
 from findings import list_findings, get_finding, create_finding, update_finding
 from management import scopes, get_scope, create_scope, delete_scope, filters, create_filter, delete_filter, environments, create_environment, delete_environment, projects, create_project, delete_project, hosted_files, tasks, cancel_task
