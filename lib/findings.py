@@ -1,125 +1,155 @@
-"""Findings management via raw GraphQL."""
+"""Caido Findings management via GraphQL."""
 
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from client import graphql
 
+# ── GraphQL fragments & queries ─────────────────────────────────────────────
+
+FINDING_FRAGMENT = """
+fragment FindingFull on Finding {
+  id
+  request { id }
+  title
+  reporter
+  description
+  dedupeKey
+  host
+  path
+  hidden
+  createdAt
+}
+"""
+
+FINDINGS_QUERY = """
+query Findings($first: Int, $after: String, $last: Int, $before: String, $filter: FilterClauseFindingInput, $order: FindingOrderInput) {
+  findings(first: $first, after: $after, last: $last, before: $before, filter: $filter, order: $order) {
+    edges {
+      cursor
+      node { ...FindingFull }
+    }
+    pageInfo { hasNextPage hasPreviousPage startCursor endCursor }
+  }
+}
+""" + FINDING_FRAGMENT
+
+GET_FINDING_QUERY = """
+query Finding($id: ID!) {
+  finding(id: $id) { ...FindingFull }
+}
+""" + FINDING_FRAGMENT
+
+CREATE_FINDING_MUTATION = """
+mutation CreateFinding($requestId: ID!, $input: CreateFindingInput!) {
+  createFinding(requestId: $requestId, input: $input) {
+    error {
+      __typename
+      ... on OtherUserError { message }
+      ... on UnknownIdUserError { message }
+    }
+    finding { ...FindingFull }
+  }
+}
+""" + FINDING_FRAGMENT
+
+UPDATE_FINDING_MUTATION = """
+mutation UpdateFinding($id: ID!, $input: UpdateFindingInput!) {
+  updateFinding(id: $id, input: $input) {
+    error {
+      __typename
+      ... on UnknownIdUserError { message }
+      ... on OtherUserError { message }
+    }
+    finding { ...FindingFull }
+  }
+}
+""" + FINDING_FRAGMENT
+
+
+# ── Public API ───────────────────────────────────────────────────────────────
 
 async def list_findings(query=None, limit=50, client=None):
-    """List findings with optional text filter."""
-    gql = """
-    query Findings($input: FindingsInput!) {
-      findings(input: $input) {
-        edges {
-          node {
-            id
-            title
-            description
-            severity
-            state
-            createdAt
-            request { id host method path }
-          }
-        }
-        totalCount
-      }
-    }
-    """
-    variables = {"input": {"limit": limit, "offset": 0}}
-    result = await graphql(gql, variables, client=client)
-    if "error" in result:
-        return result
-    findings_data = result.get("data", {}).get("findings", {})
-    findings = [
-        edge["node"] for edge in findings_data.get("edges", [])
-    ]
-    # Client-side text filter if query provided
+    """List findings. If *query* is given, filter client-side by title."""
+    data = await graphql(
+        FINDINGS_QUERY,
+        variables={"first": limit},
+        client=client,
+    )
+    edges = data.get("findings", {}).get("edges", [])
+    findings = [e["node"] for e in edges if e.get("node")]
+
     if query:
         q = query.lower()
-        findings = [f for f in findings if q in f.get("title", "").lower()
-                    or q in (f.get("description") or "").lower()]
-    return {"findings": findings, "total": findings_data.get("totalCount", 0)}
+        findings = [f for f in findings if q in (f.get("title") or "").lower()]
+
+    return {"findings": findings, "total": len(findings)}
 
 
 async def get_finding(finding_id, client=None):
-    """Get a single finding by ID."""
-    gql = """
-    query GetFinding($id: ID!) {
-      finding(id: $id) {
-        id
-        title
-        description
-        severity
-        state
-        createdAt
-        request { id host method path }
-      }
-    }
-    """
-    result = await graphql(gql, {"id": finding_id}, client=client)
-    if "error" in result:
-        return result
-    return result.get("data", {}).get("finding", {"error": "Finding not found"})
+    """Fetch a single finding by ID."""
+    data = await graphql(
+        GET_FINDING_QUERY,
+        variables={"id": finding_id},
+        client=client,
+    )
+    return data.get("finding", {})
 
 
 async def create_finding(title, description=None, severity=None, request_id=None, client=None):
-    """Create a new finding."""
-    gql = """
-    mutation CreateFinding($input: CreateFindingInput!) {
-      createFinding(input: $input) {
-        ... on CreateFindingSuccess {
-          finding { id title }
-        }
-        ... on CreateFindingError {
-          message
-        }
-      }
-    }
+    """Create a new finding attached to *request_id*.
+
+    Caido's CreateFindingInput accepts: title, description, reporter.
+    Severity is not a native Finding field; it is folded into the description.
     """
-    inp = {"title": title}
+    if not request_id:
+        raise ValueError("request_id is required to create a finding")
+
+    input_fields = {"title": title}
     if description:
-        inp["description"] = description
-    if severity:
-        inp["severity"] = severity
-    if request_id:
-        inp["requestId"] = request_id
-    result = await graphql(gql, {"input": inp}, client=client)
-    if "error" in result:
-        return result
-    payload = result.get("data", {}).get("createFinding", {})
-    if "message" in payload:
-        return {"error": payload["message"]}
-    return payload.get("finding", {"error": "Unexpected response"})
+        desc = description
+        if severity:
+            desc = f"**Severity:** {severity}\n\n{description}"
+        input_fields["description"] = desc
+    elif severity:
+        input_fields["description"] = f"**Severity:** {severity}"
+
+    data = await graphql(
+        CREATE_FINDING_MUTATION,
+        variables={"requestId": request_id, "input": input_fields},
+        client=client,
+    )
+    result = data.get("createFinding", {})
+    if result.get("error"):
+        return {"error": result["error"]}
+    return result.get("finding", {})
 
 
 async def update_finding(finding_id, title=None, description=None, severity=None, state=None, client=None):
     """Update an existing finding."""
-    gql = """
-    mutation UpdateFinding($input: UpdateFindingInput!) {
-      updateFinding(input: $input) {
-        ... on UpdateFindingSuccess {
-          finding { id title }
-        }
-        ... on UpdateFindingError {
-          message
-        }
-      }
-    }
-    """
-    inp = {"id": finding_id}
+    input_fields = {}
     if title is not None:
-        inp["title"] = title
+        input_fields["title"] = title
     if description is not None:
-        inp["description"] = description
-    if severity is not None:
-        inp["severity"] = severity
+        desc = description
+        if severity:
+            desc = f"**Severity:** {severity}\n\n{description}"
+        input_fields["description"] = desc
+    elif severity is not None:
+        input_fields["description"] = f"**Severity:** {severity}"
+    # state/hidden is handled via the hidden field if needed
     if state is not None:
-        inp["state"] = state
-    result = await graphql(gql, {"input": inp}, client=client)
-    if "error" in result:
-        return result
-    payload = result.get("data", {}).get("updateFinding", {})
-    if "message" in payload:
-        return {"error": payload["message"]}
-    return payload.get("finding", {"error": "Unexpected response"})
+        input_fields["hidden"] = state.lower() in ("hidden", "resolved", "false_positive")
+
+    if not input_fields:
+        return {"error": {"__typename": "ValidationError", "message": "No fields to update"}}
+
+    data = await graphql(
+        UPDATE_FINDING_MUTATION,
+        variables={"id": finding_id, "input": input_fields},
+        client=client,
+    )
+    result = data.get("updateFinding", {})
+    if result.get("error"):
+        return {"error": result["error"]}
+    return result.get("finding", {})

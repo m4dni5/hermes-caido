@@ -105,13 +105,15 @@ async def graphql(query: str, variables: dict[str, Any] | None = None) -> dict[s
 
 
 async def health() -> dict[str, Any]:
-    """Check Caido health via REST."""
-    session, url = await _get_session()
-    async with session.get(f"{url}/api/health") as resp:
-        if resp.status != 200:
-            text = await resp.text()
-            raise RuntimeError(f"Health check failed ({resp.status}): {text[:200]}")
-        return await resp.json()
+    """Check Caido health via GraphQL."""
+    try:
+        data = await graphql("query { health { status version } }")
+        return data.get("health", {})
+    except Exception:
+        # Fallback: try REST
+        session, url = await _get_session()
+        async with session.get(f"{url}/") as resp:
+            return {"status": "ok" if resp.status == 200 else "error", "statusCode": resp.status}
 
 
 async def close() -> None:

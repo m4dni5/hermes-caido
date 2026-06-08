@@ -1,6 +1,7 @@
 """Replay operations for the Caido CLI.
 
 Uses raw GraphQL queries via the client module — no SDK dependency.
+Matches the real Caido GraphQL schema (replay sessions, collections, tasks).
 """
 
 from __future__ import annotations
@@ -12,114 +13,84 @@ sys.path.insert(0, str(Path(__file__).parent))
 from client import graphql  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# GraphQL operations
+# GraphQL fragments
 # ---------------------------------------------------------------------------
 
-_SEND_REPLAY = """mutation SendReplay($requestId: ID!) {
-  sendReplay(requestId: $requestId) {
-    ... on SendReplaySuccess {
-      requestEntry { id }
-    }
-    ... on SendReplayError {
-      message
-    }
-  }
+_FRAGMENT_REPLAY_SESSION_META = """fragment ReplaySessionMeta on ReplaySession {
+  id
+  name
+  activeEntry { id }
 }"""
 
-_SEND_RAW_REQUEST = """mutation SendRawRequest($input: RawRequestInput!) {
-  sendRawRequest(input: $input) {
-    ... on SendRawRequestSuccess {
-      requestEntry {
-        id
-        host
-        method
-        path
-        response { code }
-      }
-    }
-    ... on SendRawRequestError {
-      message
-    }
-  }
+_FRAGMENT_REPLAY_SESSION_COLLECTION_META = """fragment ReplaySessionCollectionMeta on ReplaySessionCollection {
+  id
+  name
 }"""
 
-_REPLAY_SESSIONS = """query ReplaySessions {
-  replay {
-    sessions {
-      id
-      name
-      activeEntry { id }
-    }
-  }
-}"""
+# ---------------------------------------------------------------------------
+# GraphQL queries
+# ---------------------------------------------------------------------------
+
+_REPLAY_SESSIONS = f"""{_FRAGMENT_REPLAY_SESSION_META}
+
+query ReplaySessions($first: Int, $after: String, $last: Int, $before: String) {{
+  replaySessions(first: $first, after: $after, last: $last, before: $before) {{
+    edges {{
+      cursor
+      node {{ ...ReplaySessionMeta }}
+    }}
+    pageInfo {{ hasNextPage hasPreviousPage startCursor endCursor }}
+  }}
+}}"""
+
+_REPLAY_SESSION_COLLECTIONS = f"""{_FRAGMENT_REPLAY_SESSION_COLLECTION_META}
+
+query ReplaySessionCollections($first: Int, $after: String, $last: Int, $before: String) {{
+  replaySessionCollections(first: $first, after: $after, last: $last, before: $before) {{
+    edges {{
+      cursor
+      node {{ ...ReplaySessionCollectionMeta }}
+    }}
+    pageInfo {{ hasNextPage hasPreviousPage startCursor endCursor }}
+  }}
+}}"""
+
+# ---------------------------------------------------------------------------
+# GraphQL mutations
+# ---------------------------------------------------------------------------
 
 _CREATE_REPLAY_SESSION = """mutation CreateReplaySession($input: CreateReplaySessionInput!) {
   createReplaySession(input: $input) {
-    ... on CreateReplaySessionSuccess {
-      session { id name }
-    }
-    ... on CreateReplaySessionError {
-      message
-    }
+    session { id name }
   }
 }"""
 
-_RENAME_REPLAY_SESSION = """mutation RenameReplaySession($input: RenameReplaySessionInput!) {
-  renameReplaySession(input: $input) {
-    ... on RenameReplaySessionSuccess {
-      session { id name }
-    }
-    ... on RenameReplaySessionError {
-      message
-    }
+_RENAME_REPLAY_SESSION = """mutation RenameReplaySession($id: ID!, $name: String!) {
+  renameReplaySession(id: $id, name: $name) {
+    session { id name }
   }
 }"""
 
-_DELETE_REPLAY_SESSIONS = """mutation DeleteReplaySessions($input: DeleteReplaySessionsInput!) {
-  deleteReplaySessions(input: $input) {
-    ... on DeleteReplaySessionsSuccess {
-      deletedIds
-    }
-    ... on DeleteReplaySessionsError {
-      message
-    }
+_DELETE_REPLAY_SESSIONS = """mutation DeleteReplaySessions($ids: [ID!]!) {
+  deleteReplaySessions(ids: $ids) {
+    deletedIds
   }
 }"""
 
-_REPLAY_SESSION_ENTRIES = """query ReplaySessionEntries($sessionId: ID!) {
-  replay {
-    session(id: $sessionId) {
-      entries {
-        id
-        requestEntry {
-          id
-          host
-          method
-          path
-          response { code }
-        }
-      }
-    }
+_CREATE_REPLAY_SESSION_COLLECTION = """mutation CreateReplaySessionCollection($input: CreateReplaySessionCollectionInput!) {
+  createReplaySessionCollection(input: $input) {
+    collection { id name }
   }
 }"""
 
-_REPLAY_COLLECTIONS = """query ReplayCollections {
-  replay {
-    collections {
-      id
-      name
+_START_REPLAY_TASK = """mutation StartReplayTask($sessionId: ID!, $input: StartReplayTaskInput!) {
+  startReplayTask(sessionId: $sessionId, input: $input) {
+    error {
+      __typename
+      ... on CloudUserError { message }
+      ... on OtherUserError { message }
     }
-  }
-}"""
-
-_CREATE_REPLAY_COLLECTION = """mutation CreateReplayCollection($input: CreateReplayCollectionInput!) {
-  createReplayCollection(input: $input) {
-    ... on CreateReplayCollectionSuccess {
-      collection { id name }
-    }
-    ... on CreateReplayCollectionError {
-      message
-    }
+    task { id }
   }
 }"""
 
@@ -129,28 +100,26 @@ _CREATE_REPLAY_COLLECTION = """mutation CreateReplayCollection($input: CreateRep
 
 
 async def replay(request_id: str, client=None) -> dict:
-    """Send a request through replay by its request ID.
+    """Replay an existing request by its request ID.
 
-    Uses the ``sendReplay`` mutation which dispatches an existing request
-    through the replay pipeline.
+    The Caido replay system does not expose a simple 'replay this request'
+    mutation.  Replays work via sessions and tasks.
 
     Args:
         request_id: The ID of an existing request to replay.
-        client:     Unused (kept for signature compat); calls ``graphql``
-                    directly.
+        client:     Unused (kept for signature compat).
 
     Returns:
-        Dict with the resulting request entry info, or ``error``.
+        Always returns an error dict explaining to use send_raw or
+        sessions-based replay.
     """
-    try:
-        data = await graphql(_SEND_REPLAY, {"requestId": request_id})
-        result = data.get("sendReplay", {})
-        if "message" in result:
-            return {"error": result["message"]}
-        entry = result.get("requestEntry", {})
-        return {"status": "DONE", "entry": entry}
-    except Exception as exc:
-        return {"error": str(exc)}
+    return {
+        "error": (
+            "No direct 'replay request' mutation exists in the Caido GraphQL "
+            "schema. Use send_raw() with a raw request, or create a replay "
+            "session and use start_replay_task instead."
+        )
+    }
 
 
 async def send_raw(
@@ -161,33 +130,56 @@ async def send_raw(
     sni: str | None = None,
     client=None,
 ) -> dict:
-    """Send a raw HTTP request through replay.
+    """Send a raw HTTP request through the Caido replay system.
+
+    Creates a replay session, then starts a replay task with the raw
+    request content.
 
     Args:
         raw_request: The full raw HTTP request as a string.
         host:        Target host.
         port:        Target port (default 443).
         tls:         Whether to use TLS (default True).
-        sni:         Server Name Indication value (optional, unused in
-                     current GraphQL schema).
+        sni:         Server Name Indication value (optional).
         client:      Unused (kept for signature compat).
 
     Returns:
-        Dict with ``status``, ``entry`` (or ``error``).
+        Dict with ``sessionId``, ``taskId`` (or ``error``).
     """
     try:
-        input_vars: dict = {
-            "rawRequest": raw_request,
+        # Step 1: Create a replay session for this request
+        session_result = await create_session(name=f"replay-{host}", client=client)
+        if "error" in session_result:
+            return session_result
+
+        session_id = session_result["id"]
+
+        # Step 2: Start a replay task with the raw request
+        task_input: dict = {
+            "requestContent": raw_request,
             "host": host,
             "port": port,
-            "tls": tls,
+            "isTls": tls,
         }
-        data = await graphql(_SEND_RAW_REQUEST, {"input": input_vars})
-        result = data.get("sendRawRequest", {})
-        if "message" in result:
-            return {"error": result["message"]}
-        entry = result.get("requestEntry", {})
-        return {"status": "DONE", "entry": entry}
+        if sni is not None:
+            task_input["sni"] = sni
+
+        data = await graphql(_START_REPLAY_TASK, {
+            "sessionId": session_id,
+            "input": task_input,
+        })
+
+        result = data.get("startReplayTask", {})
+        error = result.get("error")
+        if error:
+            return {"error": error.get("message", str(error))}
+
+        task = result.get("task", {})
+        return {
+            "status": "DONE",
+            "sessionId": session_id,
+            "taskId": task.get("id"),
+        }
     except Exception as exc:
         return {"error": str(exc)}
 
@@ -203,10 +195,12 @@ async def sessions(limit: int = 50, client=None) -> list:
         List of dicts, each with keys: ``id``, ``name``, ``activeEntryId``.
     """
     try:
-        data = await graphql(_REPLAY_SESSIONS)
-        raw = data.get("replay", {}).get("sessions", [])
+        data = await graphql(_REPLAY_SESSIONS, {"first": limit})
+        connection = data.get("replaySessions", {})
+        edges = connection.get("edges", [])
         out = []
-        for s in raw[:limit]:
+        for edge in edges:
+            s = edge.get("node", {})
             out.append({
                 "id": s.get("id"),
                 "name": s.get("name"),
@@ -241,9 +235,9 @@ async def create_session(
 
         data = await graphql(_CREATE_REPLAY_SESSION, {"input": input_vars})
         result = data.get("createReplaySession", {})
-        if "message" in result:
-            return {"error": result["message"]}
         session = result.get("session", {})
+        if not session:
+            return {"error": "Failed to create session (no session in response)"}
         return {"id": session.get("id"), "name": session.get("name")}
     except Exception as exc:
         return {"error": str(exc)}
@@ -263,12 +257,12 @@ async def rename_session(session_id: str, name: str, client=None) -> dict:
     try:
         data = await graphql(
             _RENAME_REPLAY_SESSION,
-            {"input": {"id": session_id, "name": name}},
+            {"id": session_id, "name": name},
         )
         result = data.get("renameReplaySession", {})
-        if "message" in result:
-            return {"error": result["message"]}
         session = result.get("session", {})
+        if not session:
+            return {"error": "Failed to rename session (no session in response)"}
         return {"id": session.get("id"), "name": session.get("name")}
     except Exception as exc:
         return {"error": str(exc)}
@@ -287,12 +281,11 @@ async def delete_sessions(ids: list[str], client=None) -> dict:
     try:
         data = await graphql(
             _DELETE_REPLAY_SESSIONS,
-            {"input": {"ids": ids}},
+            {"ids": ids},
         )
         result = data.get("deleteReplaySessions", {})
-        if "message" in result:
-            return {"error": result["message"]}
-        return {"deleted": len(ids), "ids": result.get("deletedIds", ids)}
+        deleted_ids = result.get("deletedIds", [])
+        return {"deleted": len(deleted_ids), "ids": deleted_ids}
     except Exception as exc:
         return {"error": str(exc)}
 
@@ -300,40 +293,50 @@ async def delete_sessions(ids: list[str], client=None) -> dict:
 async def session_entries(session_id: str, limit: int = 50, client=None) -> list:
     """List entries in a replay session.
 
+    Note: The Caido schema doesn't expose a top-level ``replaySession``
+    query with entries directly via the connection pattern documented here.
+    This function returns an informational error for now — use the Caido
+    UI or SDK to inspect session entries until the full query shape is
+    confirmed.
+
     Args:
         session_id: ID of the replay session.
         limit:      Maximum number of entries to return (default 50).
         client:     Unused (kept for signature compat).
 
     Returns:
-        List of entry dicts.
+        List of entry dicts (or error list).
     """
+    # The replay session entries query shape is not fully confirmed in
+    # the provided schema.  The session fragment only includes
+    # { id, name, activeEntry { id } }.  Until we have the full
+    # query for entries, return the known session metadata.
     try:
-        data = await graphql(_REPLAY_SESSION_ENTRIES, {"sessionId": session_id})
-        session = data.get("replay", {}).get("session", {})
-        if session is None:
-            return [{"error": f"Session {session_id!r} not found"}]
-        entries = session.get("entries", [])
-        out = []
-        for e in entries[:limit]:
-            req = e.get("requestEntry") or {}
-            out.append({
-                "id": e.get("id"),
-                "requestEntry": {
-                    "id": req.get("id"),
-                    "host": req.get("host"),
-                    "method": req.get("method"),
-                    "path": req.get("path"),
-                    "responseCode": (req.get("response") or {}).get("code"),
-                },
-            })
-        return out
+        data = await graphql(_REPLAY_SESSIONS, {"first": 100})
+        connection = data.get("replaySessions", {})
+        edges = connection.get("edges", [])
+        for edge in edges:
+            s = edge.get("node", {})
+            if s.get("id") == session_id:
+                active = s.get("activeEntry")
+                entry_id = active.get("id") if active else None
+                return [{
+                    "sessionId": session_id,
+                    "sessionName": s.get("name"),
+                    "activeEntryId": entry_id,
+                    "note": (
+                        "Full entry listing requires the replaySession(id:) "
+                        "query with entries sub-field. Only activeEntry is "
+                        "available via the connection query."
+                    ),
+                }]
+        return [{"error": f"Session {session_id!r} not found"}]
     except Exception as exc:
         return [{"error": str(exc)}]
 
 
 async def collections(limit: int = 50, client=None) -> list:
-    """List replay collections.
+    """List replay session collections.
 
     Args:
         limit:  Maximum number of collections to return (default 50).
@@ -343,15 +346,19 @@ async def collections(limit: int = 50, client=None) -> list:
         List of dicts with keys: ``id``, ``name``.
     """
     try:
-        data = await graphql(_REPLAY_COLLECTIONS)
-        raw = data.get("replay", {}).get("collections", [])
-        return [{"id": c.get("id"), "name": c.get("name")} for c in raw[:limit]]
+        data = await graphql(_REPLAY_SESSION_COLLECTIONS, {"first": limit})
+        connection = data.get("replaySessionCollections", {})
+        edges = connection.get("edges", [])
+        return [
+            {"id": e.get("node", {}).get("id"), "name": e.get("node", {}).get("name")}
+            for e in edges
+        ]
     except Exception as exc:
         return [{"error": str(exc)}]
 
 
 async def create_collection(name: str, client=None) -> dict:
-    """Create a replay collection.
+    """Create a replay session collection.
 
     Args:
         name:   Name for the new collection.
@@ -362,13 +369,13 @@ async def create_collection(name: str, client=None) -> dict:
     """
     try:
         data = await graphql(
-            _CREATE_REPLAY_COLLECTION,
+            _CREATE_REPLAY_SESSION_COLLECTION,
             {"input": {"name": name}},
         )
-        result = data.get("createReplayCollection", {})
-        if "message" in result:
-            return {"error": result["message"]}
+        result = data.get("createReplaySessionCollection", {})
         collection = result.get("collection", {})
+        if not collection:
+            return {"error": "Failed to create collection (no collection in response)"}
         return {"id": collection.get("id"), "name": collection.get("name")}
     except Exception as exc:
         return {"error": str(exc)}
