@@ -15,34 +15,23 @@ import sys
 logger = logging.getLogger(__name__)
 
 _SDK_PACKAGE = "caido-sdk-client"
-_DEPS_DIR = Path(__file__).parent / "lib" / "_deps"
 
 
 def _ensure_sdk() -> bool:
-    """Install caido-sdk-client into plugin's lib/_deps if missing."""
-    # Add deps dir to path so imports work
-    if str(_DEPS_DIR) not in sys.path:
-        sys.path.insert(0, str(_DEPS_DIR))
-
+    """Install caido-sdk-client if missing. Returns True if available."""
     try:
         importlib.import_module("caido_sdk_client")
         return True
     except ImportError:
         pass
 
-    logger.info("Caido plugin: installing %s into %s ...", _SDK_PACKAGE, _DEPS_DIR)
+    logger.info("Caido plugin: installing %s ...", _SDK_PACKAGE)
     try:
-        _DEPS_DIR.mkdir(parents=True, exist_ok=True)
-        # Try system pip (not the venv's pip which may be broken)
-        pip_cmd = ["pip3", "install", _SDK_PACKAGE, "--target", str(_DEPS_DIR), "--quiet"]
-        result = subprocess.run(pip_cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            # Fallback: try python -m pip with the system python
-            pip_cmd = [
-                "/usr/bin/python3", "-m", "pip", "install",
-                _SDK_PACKAGE, "--target", str(_DEPS_DIR), "--quiet",
-            ]
-            result = subprocess.run(pip_cmd, capture_output=True, text=True)
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", _SDK_PACKAGE, "--quiet"],
+            capture_output=True,
+            text=True,
+        )
         if result.returncode != 0:
             logger.error(
                 "Caido plugin: pip install failed (rc=%d)\nstdout: %s\nstderr: %s",
@@ -61,7 +50,6 @@ def _ensure_sdk() -> bool:
 def _load_tools():  # noqa: ANN202
     from . import schemas, tools
     return schemas, tools
-
 
 
 def register(ctx) -> None:  # noqa: ANN001 — plugin context type
