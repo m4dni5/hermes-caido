@@ -33,6 +33,14 @@ def _ensure_sdk() -> bool:
             text=True,
         )
         if result.returncode != 0:
+            # SDK requires Python >=3.12; venv may be 3.11 — try forcing
+            logger.warning("Caido plugin: standard install failed, retrying with --ignore-requires-python")
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", _SDK_PACKAGE, "--quiet", "--ignore-requires-python"],
+                capture_output=True,
+                text=True,
+            )
+        if result.returncode != 0:
             logger.error(
                 "Caido plugin: pip install failed (rc=%d)\nstdout: %s\nstderr: %s",
                 result.returncode, result.stdout, result.stderr,
