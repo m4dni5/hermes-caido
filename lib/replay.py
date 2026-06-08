@@ -218,7 +218,7 @@ async def create_session(
     """Create a new replay session.
 
     Args:
-        name:          Optional session name.
+        name:          Optional session name (set via rename after creation).
         collection_id: Optional collection to place the session in.
         client:        Unused (kept for signature compat).
 
@@ -226,9 +226,7 @@ async def create_session(
         Dict with keys: ``id``, ``name`` (or ``error``).
     """
     try:
-        input_vars: dict = {}
-        if name:
-            input_vars["name"] = name
+        input_vars: dict = {"kind": "HTTP"}
         if collection_id:
             input_vars["collectionId"] = collection_id
 
@@ -237,7 +235,13 @@ async def create_session(
         session = result.get("session", {})
         if not session:
             return {"error": "Failed to create session (no session in response)"}
-        return {"id": session.get("id"), "name": session.get("name")}
+        session_id = session.get("id")
+
+        # Rename if name provided (createReplaySession has no name field)
+        if name and session_id:
+            await rename_session(session_id, name)
+
+        return {"id": session_id, "name": name or session.get("name", "")}
     except Exception as exc:
         return {"error": str(exc)}
 
