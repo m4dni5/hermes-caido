@@ -45,8 +45,8 @@ mutation CreateFinding($requestId: ID!, $input: CreateFindingInput!) {
   createFinding(requestId: $requestId, input: $input) {
     error {
       __typename
-      ... on OtherUserError { message }
-      ... on UnknownIdUserError { message }
+      ... on OtherUserError { code }
+      ... on UnknownIdUserError { code }
     }
     finding { ...FindingFull }
   }
@@ -58,8 +58,8 @@ mutation UpdateFinding($id: ID!, $input: UpdateFindingInput!) {
   updateFinding(id: $id, input: $input) {
     error {
       __typename
-      ... on UnknownIdUserError { message }
-      ... on OtherUserError { message }
+      ... on UnknownIdUserError { code }
+      ... on OtherUserError { code }
     }
     finding { ...FindingFull }
   }
@@ -105,7 +105,7 @@ async def create_finding(title, description=None, severity=None, request_id=None
     if not request_id:
         raise ValueError("request_id is required to create a finding")
 
-    input_fields = {"title": title}
+    input_fields = {"title": title, "reporter": "hermes-plugin"}
     if description:
         desc = description
         if severity:
