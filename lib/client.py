@@ -1,34 +1,30 @@
-"""Authentication and Caido client singleton.
+"""Caido GraphQL client — raw HTTP, no SDK dependency.
 
-Reads ``CAIDO_PAT`` and ``CAIDO_URL`` from the environment (or
-``~/.hermes/.env`` as fallback) and exposes lazy helpers that return a
-shared, pre-connected SDK ``Client`` and ``GraphQLClient``.
+Reads CAIDO_PAT and CAIDO_URL from env or ~/.hermes/.env or
+~/.claude/config/secrets.json.  Uses aiohttp for async HTTP.
 """
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 from pathlib import Path
+from typing import Any
 
-from caido_sdk_client.auth.types import AuthCacheFile, PATAuthOptions
-from caido_sdk_client.client import Client
-from caido_sdk_client.graphql import GraphQLClient
+import aiohttp
 
-# ── paths ────────────────────────────────────────────────────────────────────
+logger = logging.getLogger(__name__)
 
 _HERMES_ENV = Path.home() / ".hermes" / ".env"
 _CLAUDE_SECRETS = Path.home() / ".claude" / "config" / "secrets.json"
-_CACHE_FILE = Path.home() / ".config" / "caido-py" / "secrets.json"
 
-# ── singleton state ──────────────────────────────────────────────────────────
+_session: aiohttp.ClientSession | None = None
+_url: str | None = None
+_pat: str | None = None
 
-_client: Client | None = None
-
-
-# ── helpers ──────────────────────────────────────────────────────────────────
 
 def _load_dotenv(path: Path) -> dict[str, str]:
-    """Parse simple KEY=VALUE lines from a dotenv file, ignoring comments."""
     env: dict[str, str] = {}
     if not path.is_file():
         return env
@@ -45,26 +41,18 @@ def _load_dotenv(path: Path) -> dict[str, str]:
 
 
 def _resolve_credentials() -> tuple[str, str]:
-    """Return ``(pat, url)`` from env vars or ``~/.hermes/.env``.
-
-    Raises ``RuntimeError`` with a clear message if either value is missing.
-    """
     pat = os.environ.get("CAIDO_PAT")
     url = os.environ.get("CAIDO_URL")
-
     if pat and url:
         return pat, url
 
-    # Fallback: try ~/.hermes/.env
     dotenv = _load_dotenv(_HERMES_ENV)
     pat = pat or dotenv.get("CAIDO_PAT")
     url = url or dotenv.get("CAIDO_URL")
 
-    # Fallback: try ~/.claude/config/secrets.json (caido key)
     if (not pat or not url) and _CLAUDE_SECRETS.is_file():
         try:
-            import json as _json
-            secrets = _json.loads(_CLAUDE_SECRETS.read_text())
+            secrets = json.loads(_CLAUDE_SECRETS.read_text())
             caido = secrets.get("caido", {})
             pat = pat or caido.get("pat")
             url = url or caido.get("url")
@@ -78,34 +66,57 @@ def _resolve_credentials() -> tuple[str, str]:
         missing.append("CAIDO_URL")
     if missing:
         raise RuntimeError(
-            f"Missing required credential(s): {', '.join(missing)}. "
-            f"Set them as environment variables or in {_HERMES_ENV}."
+            f"Missing credential(s): {', '.join(missing)}. "
+            f"Set as env vars or in {_HERMES_ENV}."
         )
     return pat, url  # type: ignore[return-value]
 
 
-async def get_client() -> Client:
-    """Return the singleton ``Client``, creating and connecting it on first call."""
-    global _client
-    if _client is not None:
-        return _client
+async def _get_session() -> tuple[aiohttp.ClientSession, str]:
+    global _session, _url, _pat
+    if _session and not _session.closed:
+        return _session, _url  # type: ignore[return-value]
 
-    pat, url = _resolve_credentials()
-
-    # Ensure cache directory exists
-    _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-
-    auth = PATAuthOptions(
-        pat=pat,
-        cache=AuthCacheFile(file=str(_CACHE_FILE)),
+    _pat, _url = _resolve_credentials()
+    _session = aiohttp.ClientSession(
+        headers={
+            "Authorization": f"Bearer {_pat}",
+            "Content-Type": "application/json",
+        },
     )
-
-    _client = Client(url, auth=auth)
-    await _client.connect()
-    return _client
+    return _session, _url  # type: ignore[return-value]
 
 
-async def get_graphql() -> GraphQLClient:
-    """Return the ``GraphQLClient`` from the shared ``Client``."""
-    client = await get_client()
-    return client.graphql
+async def graphql(query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Execute a GraphQL query/mutation against the Caido API."""
+    session, url = await _get_session()
+    payload: dict[str, Any] = {"query": query}
+    if variables:
+        payload["variables"] = variables
+
+    async with session.post(f"{url}/graphql", json=payload) as resp:
+        if resp.status != 200:
+            text = await resp.text()
+            raise RuntimeError(f"GraphQL HTTP {resp.status}: {text[:500]}")
+        data = await resp.json()
+        if "errors" in data:
+            raise RuntimeError(f"GraphQL errors: {data['errors']}")
+        return data.get("data", {})
+
+
+async def health() -> dict[str, Any]:
+    """Check Caido health via REST."""
+    session, url = await _get_session()
+    async with session.get(f"{url}/api/health") as resp:
+        if resp.status != 200:
+            text = await resp.text()
+            raise RuntimeError(f"Health check failed ({resp.status}): {text[:200]}")
+        return await resp.json()
+
+
+async def close() -> None:
+    """Close the shared session."""
+    global _session
+    if _session and not _session.closed:
+        await _session.close()
+    _session = None

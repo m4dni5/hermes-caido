@@ -11,7 +11,7 @@ from replay import replay, send_raw, sessions, create_session, collections
 from findings import list_findings, get_finding, create_finding, update_finding
 from management import scopes, get_scope, create_scope, delete_scope, filters, create_filter, delete_filter, environments, create_environment, delete_environment, projects, create_project, delete_project, hosted_files, tasks, cancel_task
 from output import format_response, format_entry_compact, truncate_body, extract_headers, format_curl
-from client import get_client
+from client import health as client_health
 
 
 def _format(data: dict, args: dict) -> str:
@@ -161,8 +161,7 @@ async def handle_projects(args: dict, **kwargs) -> str:
 
 async def handle_health(args: dict, **kwargs) -> str:
     try:
-        client = get_client()
-        data = await client.health()
+        data = await client_health()
         return json.dumps(data)
     except Exception as e:
         return json.dumps({"error": str(e)})

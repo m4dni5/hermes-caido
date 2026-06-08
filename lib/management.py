@@ -1,496 +1,234 @@
-"""Management operations for the Caido Python SDK CLI.
-
-Wraps the Caido SDK for scopes, filters, environments, projects, hosted
-files, and tasks.  Every public async function accepts an optional ``client``
-keyword; when omitted a shared client is obtained from ``lib.client``.
 """
-
-from __future__ import annotations
+Caido management operations via raw GraphQL.
+"""
 
 import sys
 from pathlib import Path
-from typing import Any
-
 sys.path.insert(0, str(Path(__file__).parent))
-from client import get_client  # noqa: E402
+from client import graphql
 
 
-# ---------------------------------------------------------------------------
-# SDK-object → plain-dict conversion helpers
-# ---------------------------------------------------------------------------
+SCOPES_QUERY = """query Scopes { scopes { id name } }"""
 
-def _scope_to_dict(scope: Any) -> dict[str, Any]:
-    """Convert an SDK ``Scope`` to a plain dict."""
-    return {
-        "id": str(scope.id),
-        "name": scope.name,
-        "allowlist": list(scope.allowlist),
-        "denylist": list(scope.denylist),
-        "indexed": scope.indexed,
-    }
+GET_SCOPE_QUERY = """query GetScope($id: ID!) { scope(id: $id) { id name allow deny } }"""
 
+CREATE_SCOPE_MUTATION = """mutation CreateScope($input: CreateScopeInput!) {
+  createScope(input: $input) {
+    ... on CreateScopeSuccess { scope { id name } }
+    ... on CreateScopeError { message }
+  }
+}"""
 
-def _filter_to_dict(fp: Any) -> dict[str, Any]:
-    """Convert an SDK ``FilterPreset`` to a plain dict."""
-    return {
-        "id": str(fp.id),
-        "name": fp.name,
-        "alias": fp.alias,
-        "clause": fp.clause,
-        "kind": str(fp.kind),
-    }
+DELETE_SCOPE_MUTATION = """mutation DeleteScope($id: ID!) {
+  deleteScope(id: $id) {
+    ... on DeleteScopeSuccess { id }
+    ... on DeleteScopeError { message }
+  }
+}"""
 
+FILTERS_QUERY = """query Filters { filters { id name alias clause kind } }"""
 
-def _environment_to_dict(env: Any) -> dict[str, Any]:
-    """Convert an SDK ``Environment`` to a plain dict."""
-    return {
-        "id": str(env.id),
-        "name": env.name,
-        "version": env.version,
-        "variables": [
-            {"name": v.name, "value": v.value, "kind": str(v.kind)}
-            for v in env.variables
-        ],
-    }
+CREATE_FILTER_MUTATION = """mutation CreateFilter($input: CreateFilterInput!) {
+  createFilter(input: $input) {
+    ... on CreateFilterSuccess { filter { id name } }
+    ... on CreateFilterError { message }
+  }
+}"""
 
+DELETE_FILTER_MUTATION = """mutation DeleteFilter($id: ID!) {
+  deleteFilter(id: $id) {
+    ... on DeleteFilterSuccess { id }
+    ... on DeleteFilterError { message }
+  }
+}"""
 
-def _project_to_dict(proj: Any) -> dict[str, Any]:
-    """Convert an SDK ``Project`` to a plain dict."""
-    return {
-        "id": str(proj.id),
-        "name": proj.name,
-        "path": proj.path,
-        "status": str(proj.status),
-        "temporary": proj.temporary,
-        "createdAt": proj.created_at.isoformat() if proj.created_at else None,
-        "updatedAt": proj.updated_at.isoformat() if proj.updated_at else None,
-        "version": proj.version,
-        "size": proj.size,
-        "readOnly": proj.read_only,
-    }
+ENVIRONMENTS_QUERY = """query Environments { environments { id name version variables { key value } } }"""
 
+CREATE_ENVIRONMENT_MUTATION = """mutation CreateEnvironment($input: CreateEnvironmentInput!) {
+  createEnvironment(input: $input) {
+    ... on CreateEnvironmentSuccess { environment { id name } }
+    ... on CreateEnvironmentError { message }
+  }
+}"""
 
-def _hosted_file_to_dict(hf: Any) -> dict[str, Any]:
-    """Convert an SDK ``HostedFile`` to a plain dict."""
-    return {
-        "id": str(hf.id),
-        "name": hf.name,
-        "path": hf.path,
-        "size": hf.size,
-        "status": str(hf.status),
-        "createdAt": hf.created_at.isoformat() if hf.created_at else None,
-        "updatedAt": hf.updated_at.isoformat() if hf.updated_at else None,
-    }
+DELETE_ENVIRONMENT_MUTATION = """mutation DeleteEnvironment($id: ID!) {
+  deleteEnvironment(id: $id) {
+    ... on DeleteEnvironmentSuccess { id }
+    ... on DeleteEnvironmentError { message }
+  }
+}"""
 
+PROJECTS_QUERY = """query Projects { projects { id name temporary createdAt updatedAt version size readOnly status } }"""
 
-def _task_to_dict(task: Any) -> dict[str, Any]:
-    """Convert an SDK ``Task`` (or ``ReplayTask``) to a plain dict."""
-    d: dict[str, Any] = {
-        "id": str(task.id),
-        "createdAt": task.created_at if hasattr(task, "created_at") else None,
-        "type": "replay" if type(task).__name__ == "ReplayTask" else "task",
-    }
-    # ReplayTask carries a replay_entry_id
-    if hasattr(task, "replay_entry_id"):
-        d["replayEntryId"] = str(task.replay_entry_id)
-    return d
+CREATE_PROJECT_MUTATION = """mutation CreateProject($input: CreateProjectInput!) {
+  createProject(input: $input) {
+    ... on CreateProjectSuccess { project { id name } }
+    ... on CreateProjectError { message }
+  }
+}"""
+
+DELETE_PROJECT_MUTATION = """mutation DeleteProject($id: ID!) {
+  deleteProject(id: $id) {
+    ... on DeleteProjectSuccess { id }
+    ... on DeleteProjectError { message }
+  }
+}"""
+
+HOSTED_FILES_QUERY = """query HostedFiles { hostedFiles { id name url size } }"""
+
+TASKS_QUERY = """query Tasks { tasks { id status type createdAt } }"""
+
+CANCEL_TASK_MUTATION = """mutation CancelTask($id: ID!) {
+  cancelTask(id: $id) {
+    ... on CancelTaskSuccess { id }
+    ... on CancelTaskError { message }
+  }
+}"""
 
 
-# ---------------------------------------------------------------------------
-# Scope operations
-# ---------------------------------------------------------------------------
+def _handle_union(data: dict, success_key: str) -> dict:
+    """Extract result from a union type response. Returns error dict if it's an error variant."""
+    if not data:
+        return {"error": "Empty response"}
+    if "message" in data:
+        return {"error": data["message"]}
+    return data
 
-async def scopes(
-    limit: int = 50,
-    client: Any | None = None,
-) -> list[dict[str, Any]]:
-    """List scopes.
 
-    Args:
-        limit:  Maximum number of scopes to return (default 50).
-        client: Optional pre-built Caido Client instance.
-
-    Returns:
-        List of scope dicts.
-    """
+async def scopes(limit=50, client=None) -> list:
     try:
-        c = client or await get_client()
-        items = await c.scope.list()
-        return [_scope_to_dict(s) for s in items[:limit]]
-    except Exception as exc:
-        return [{"error": str(exc)}]
+        result = await graphql(SCOPES_QUERY, client=client)
+        return result.get("scopes", [])
+    except Exception as e:
+        return {"error": str(e)}
 
 
-async def get_scope(
-    scope_id: str,
-    client: Any | None = None,
-) -> dict[str, Any]:
-    """Get a scope by ID.
-
-    Args:
-        scope_id: The scope ID.
-        client:   Optional pre-built Caido Client instance.
-
-    Returns:
-        Scope dict, or dict with ``error`` key on failure.
-    """
+async def get_scope(scope_id, client=None) -> dict:
     try:
-        c = client or await get_client()
-        scope = await c.scope.get(scope_id)
+        result = await graphql(GET_SCOPE_QUERY, {"id": scope_id}, client=client)
+        scope = result.get("scope")
         if scope is None:
-            return {"error": f"Scope {scope_id!r} not found"}
-        return _scope_to_dict(scope)
-    except Exception as exc:
-        return {"error": str(exc)}
+            return {"error": "Scope not found"}
+        return scope
+    except Exception as e:
+        return {"error": str(e)}
 
 
-async def create_scope(
-    name: str,
-    allow: list[str] | None = None,
-    deny: list[str] | None = None,
-    client: Any | None = None,
-) -> dict[str, Any]:
-    """Create a new scope.
-
-    Args:
-        name:   Scope name.
-        allow:  Allowlist of glob patterns.
-        deny:   Denylist of glob patterns.
-        client: Optional pre-built Caido Client instance.
-
-    Returns:
-        Created scope dict, or dict with ``error`` key on failure.
-    """
+async def create_scope(name, allow=None, deny=None, client=None) -> dict:
     try:
-        from caido_sdk_client.types import CreateScopeOptions
-
-        c = client or await get_client()
-        opts = CreateScopeOptions(
-            name=name,
-            allowlist=allow or [],
-            denylist=deny or [],
-        )
-        scope = await c.scope.create(opts)
-        return _scope_to_dict(scope)
-    except Exception as exc:
-        return {"error": str(exc)}
+        input_vars = {"name": name}
+        if allow is not None:
+            input_vars["allow"] = allow
+        if deny is not None:
+            input_vars["deny"] = deny
+        result = await graphql(CREATE_SCOPE_MUTATION, {"input": input_vars}, client=client)
+        return _handle_union(result.get("createScope"), "scope")
+    except Exception as e:
+        return {"error": str(e)}
 
 
-async def delete_scope(
-    scope_id: str,
-    client: Any | None = None,
-) -> dict[str, Any]:
-    """Delete a scope by ID.
-
-    Args:
-        scope_id: The scope ID to delete.
-        client:   Optional pre-built Caido Client instance.
-
-    Returns:
-        Dict with ``deleted`` key, or ``error`` on failure.
-    """
+async def delete_scope(scope_id, client=None) -> dict:
     try:
-        c = client or await get_client()
-        await c.scope.delete(scope_id)
-        return {"deleted": scope_id}
-    except Exception as exc:
-        return {"error": str(exc)}
+        result = await graphql(DELETE_SCOPE_MUTATION, {"id": scope_id}, client=client)
+        return _handle_union(result.get("deleteScope"), "id")
+    except Exception as e:
+        return {"error": str(e)}
 
 
-# ---------------------------------------------------------------------------
-# Filter (preset) operations
-# ---------------------------------------------------------------------------
-
-async def filters(
-    limit: int = 50,
-    client: Any | None = None,
-) -> list[dict[str, Any]]:
-    """List filter presets.
-
-    Args:
-        limit:  Maximum number of filters to return (default 50).
-        client: Optional pre-built Caido Client instance.
-
-    Returns:
-        List of filter preset dicts.
-    """
+async def filters(limit=50, client=None) -> list:
     try:
-        c = client or await get_client()
-        items = await c.filter.list()
-        return [_filter_to_dict(f) for f in items[:limit]]
-    except Exception as exc:
-        return [{"error": str(exc)}]
+        result = await graphql(FILTERS_QUERY, client=client)
+        return result.get("filters", [])
+    except Exception as e:
+        return {"error": str(e)}
 
 
-async def create_filter(
-    name: str,
-    httpql: str,
-    client: Any | None = None,
-) -> dict[str, Any]:
-    """Create a new filter preset.
-
-    Args:
-        name:   Filter preset name.
-        httpql: The HTTPQL filter clause.
-        client: Optional pre-built Caido Client instance.
-
-    Returns:
-        Created filter preset dict, or dict with ``error`` on failure.
-    """
+async def create_filter(name, httpql, client=None) -> dict:
     try:
-        from caido_sdk_client.types import CreateFilterPresetOptions
-
-        c = client or await get_client()
-        opts = CreateFilterPresetOptions(
-            name=name,
-            alias=name,
-            clause=httpql,
-        )
-        fp = await c.filter.create(opts)
-        return _filter_to_dict(fp)
-    except Exception as exc:
-        return {"error": str(exc)}
+        result = await graphql(CREATE_FILTER_MUTATION, {"input": {"name": name, "httpql": httpql}}, client=client)
+        return _handle_union(result.get("createFilter"), "filter")
+    except Exception as e:
+        return {"error": str(e)}
 
 
-async def delete_filter(
-    filter_id: str,
-    client: Any | None = None,
-) -> dict[str, Any]:
-    """Delete a filter preset by ID.
-
-    Args:
-        filter_id: The filter preset ID to delete.
-        client:    Optional pre-built Caido Client instance.
-
-    Returns:
-        Dict with ``deleted`` key, or ``error`` on failure.
-    """
+async def delete_filter(filter_id, client=None) -> dict:
     try:
-        c = client or await get_client()
-        await c.filter.delete(filter_id)
-        return {"deleted": filter_id}
-    except Exception as exc:
-        return {"error": str(exc)}
+        result = await graphql(DELETE_FILTER_MUTATION, {"id": filter_id}, client=client)
+        return _handle_union(result.get("deleteFilter"), "id")
+    except Exception as e:
+        return {"error": str(e)}
 
 
-# ---------------------------------------------------------------------------
-# Environment operations
-# ---------------------------------------------------------------------------
-
-async def environments(
-    limit: int = 50,
-    client: Any | None = None,
-) -> list[dict[str, Any]]:
-    """List environments.
-
-    Args:
-        limit:  Maximum number of environments to return (default 50).
-        client: Optional pre-built Caido Client instance.
-
-    Returns:
-        List of environment dicts.
-    """
+async def environments(limit=50, client=None) -> list:
     try:
-        c = client or await get_client()
-        items = await c.environment.list()
-        return [_environment_to_dict(e) for e in items[:limit]]
-    except Exception as exc:
-        return [{"error": str(exc)}]
+        result = await graphql(ENVIRONMENTS_QUERY, client=client)
+        return result.get("environments", [])
+    except Exception as e:
+        return {"error": str(e)}
 
 
-async def create_environment(
-    name: str,
-    variables: dict[str, str] | None = None,
-    client: Any | None = None,
-) -> dict[str, Any]:
-    """Create a new environment.
-
-    Args:
-        name:      Environment name.
-        variables: Optional dict of variable name → value pairs.
-        client:    Optional pre-built Caido Client instance.
-
-    Returns:
-        Created environment dict, or dict with ``error`` on failure.
-    """
+async def create_environment(name, variables=None, client=None) -> dict:
     try:
-        from caido_sdk_client.graphql.__generated__.schema import (
-            EnvironmentVariableKind,
-        )
-        from caido_sdk_client.types import (
-            CreateEnvironmentOptions,
-            EnvironmentVariable,
-        )
-
-        c = client or await get_client()
-        env_vars = [
-            EnvironmentVariable(name=k, value=v, kind=EnvironmentVariableKind.STRING)
-            for k, v in (variables or {}).items()
-        ]
-        opts = CreateEnvironmentOptions(name=name, variables=env_vars)
-        env = await c.environment.create(opts)
-        return _environment_to_dict(env)
-    except Exception as exc:
-        return {"error": str(exc)}
+        input_vars = {"name": name}
+        if variables is not None:
+            input_vars["variables"] = variables
+        result = await graphql(CREATE_ENVIRONMENT_MUTATION, {"input": input_vars}, client=client)
+        return _handle_union(result.get("createEnvironment"), "environment")
+    except Exception as e:
+        return {"error": str(e)}
 
 
-async def delete_environment(
-    env_id: str,
-    client: Any | None = None,
-) -> dict[str, Any]:
-    """Delete an environment by ID.
-
-    Args:
-        env_id: The environment ID to delete.
-        client: Optional pre-built Caido Client instance.
-
-    Returns:
-        Dict with ``deleted`` key, or ``error`` on failure.
-    """
+async def delete_environment(env_id, client=None) -> dict:
     try:
-        c = client or await get_client()
-        await c.environment.delete(env_id)
-        return {"deleted": env_id}
-    except Exception as exc:
-        return {"error": str(exc)}
+        result = await graphql(DELETE_ENVIRONMENT_MUTATION, {"id": env_id}, client=client)
+        return _handle_union(result.get("deleteEnvironment"), "id")
+    except Exception as e:
+        return {"error": str(e)}
 
 
-# ---------------------------------------------------------------------------
-# Project operations
-# ---------------------------------------------------------------------------
-
-async def projects(
-    limit: int = 50,
-    client: Any | None = None,
-) -> list[dict[str, Any]]:
-    """List projects.
-
-    Args:
-        limit:  Maximum number of projects to return (default 50).
-        client: Optional pre-built Caido Client instance.
-
-    Returns:
-        List of project dicts.
-    """
+async def projects(limit=50, client=None) -> list:
     try:
-        c = client or await get_client()
-        items = await c.project.list()
-        return [_project_to_dict(p) for p in items[:limit]]
-    except Exception as exc:
-        return [{"error": str(exc)}]
+        result = await graphql(PROJECTS_QUERY, client=client)
+        return result.get("projects", [])
+    except Exception as e:
+        return {"error": str(e)}
 
 
-async def create_project(
-    name: str,
-    client: Any | None = None,
-) -> dict[str, Any]:
-    """Create a new project.
-
-    Args:
-        name:   Project name.
-        client: Optional pre-built Caido Client instance.
-
-    Returns:
-        Created project dict, or dict with ``error`` on failure.
-    """
+async def create_project(name, client=None) -> dict:
     try:
-        from caido_sdk_client.types import CreateProjectOptions
-
-        c = client or await get_client()
-        opts = CreateProjectOptions(name=name, temporary=False)
-        proj = await c.project.create(opts)
-        return _project_to_dict(proj)
-    except Exception as exc:
-        return {"error": str(exc)}
+        result = await graphql(CREATE_PROJECT_MUTATION, {"input": {"name": name, "temporary": False}}, client=client)
+        return _handle_union(result.get("createProject"), "project")
+    except Exception as e:
+        return {"error": str(e)}
 
 
-async def delete_project(
-    project_id: str,
-    client: Any | None = None,
-) -> dict[str, Any]:
-    """Delete a project by ID.
-
-    Args:
-        project_id: The project ID to delete.
-        client:     Optional pre-built Caido Client instance.
-
-    Returns:
-        Dict with ``deleted`` key, or ``error`` on failure.
-    """
+async def delete_project(project_id, client=None) -> dict:
     try:
-        c = client or await get_client()
-        await c.project.delete(project_id)
-        return {"deleted": project_id}
-    except Exception as exc:
-        return {"error": str(exc)}
+        result = await graphql(DELETE_PROJECT_MUTATION, {"id": project_id}, client=client)
+        return _handle_union(result.get("deleteProject"), "id")
+    except Exception as e:
+        return {"error": str(e)}
 
 
-# ---------------------------------------------------------------------------
-# Hosted file operations
-# ---------------------------------------------------------------------------
-
-async def hosted_files(
-    limit: int = 50,
-    client: Any | None = None,
-) -> list[dict[str, Any]]:
-    """List hosted files.
-
-    Args:
-        limit:  Maximum number of hosted files to return (default 50).
-        client: Optional pre-built Caido Client instance.
-
-    Returns:
-        List of hosted file dicts.
-    """
+async def hosted_files(limit=50, client=None) -> list:
     try:
-        c = client or await get_client()
-        items = await c.hosted_file.list()
-        return [_hosted_file_to_dict(hf) for hf in items[:limit]]
-    except Exception as exc:
-        return [{"error": str(exc)}]
+        result = await graphql(HOSTED_FILES_QUERY, client=client)
+        return result.get("hostedFiles", [])
+    except Exception as e:
+        return {"error": str(e)}
 
 
-# ---------------------------------------------------------------------------
-# Task operations
-# ---------------------------------------------------------------------------
-
-async def tasks(
-    limit: int = 20,
-    client: Any | None = None,
-) -> list[dict[str, Any]]:
-    """List tasks.
-
-    Args:
-        limit:  Maximum number of tasks to return (default 20).
-        client: Optional pre-built Caido Client instance.
-
-    Returns:
-        List of task dicts.
-    """
+async def tasks(limit=50, client=None) -> list:
     try:
-        c = client or await get_client()
-        items = await c.task.list()
-        return [_task_to_dict(t) for t in items[:limit]]
-    except Exception as exc:
-        return [{"error": str(exc)}]
+        result = await graphql(TASKS_QUERY, client=client)
+        return result.get("tasks", [])
+    except Exception as e:
+        return {"error": str(e)}
 
 
-async def cancel_task(
-    task_id: str,
-    client: Any | None = None,
-) -> dict[str, Any]:
-    """Cancel a task by ID.
-
-    Args:
-        task_id: The task ID to cancel.
-        client:  Optional pre-built Caido Client instance.
-
-    Returns:
-        Dict with ``cancelled`` key, or ``error`` on failure.
-    """
+async def cancel_task(task_id, client=None) -> dict:
     try:
-        c = client or await get_client()
-        await c.task.cancel(task_id)
-        return {"cancelled": task_id}
-    except Exception as exc:
-        return {"error": str(exc)}
+        result = await graphql(CANCEL_TASK_MUTATION, {"id": task_id}, client=client)
+        return _handle_union(result.get("cancelTask"), "id")
+    except Exception as e:
+        return {"error": str(e)}
