@@ -25,6 +25,17 @@ from client import health as client_health
 
 def _format(data: dict, args: dict) -> str:
     """Apply formatting based on args flags."""
+    # For search/recent results, format the entries list
+    if isinstance(data, dict) and "entries" in data:
+        entries = data["entries"]
+        if args.get("compact"):
+            return format_response(entries, compact=True)
+        if args.get("headers_only"):
+            return format_response(entries, headers_only=True)
+        if args.get("raw"):
+            return format_response(data, raw=True)
+        return json.dumps(data)
+    # For other data
     if args.get("raw"):
         return format_response(data, raw=True)
     if args.get("headers_only"):
