@@ -40,6 +40,7 @@ _url: str | None = None
 _access_token: str | None = None
 _refresh_token: str | None = None
 _expires_at: datetime | None = None
+_current_loop: object | None = None  # Track which event loop owns _session
 
 # ── GraphQL documents ─────────────────────────────────────────────────
 
@@ -311,6 +312,37 @@ async def _do_token_refresh(url: str) -> bool:
 
 # ── session management ─────────────────────────────────────────────────
 
+def _is_session_stale() -> bool:
+    """Check if the cached session is stale (closed or different event loop)."""
+    global _session, _current_loop
+    if _session is None:
+        return False
+    if _session.closed:
+        return True
+    try:
+        current_loop = asyncio.get_running_loop()
+        if _current_loop is not current_loop:
+            return True
+        if current_loop.is_closed():
+            return True
+    except RuntimeError:
+        # No running loop — session is stale
+        return True
+    return False
+
+
+async def _close_session() -> None:
+    """Close the cached session if it exists."""
+    global _session, _current_loop
+    if _session and not _session.closed:
+        try:
+            await _session.close()
+        except Exception:
+            pass
+    _session = None
+    _current_loop = None
+
+
 async def _ensure_auth() -> tuple[str, str]:
     """Ensure we have a valid access token. Returns (url, access_token)."""
     global _url, _access_token
@@ -334,22 +366,13 @@ async def _ensure_auth() -> tuple[str, str]:
 
 
 async def _get_session() -> tuple[aiohttp.ClientSession, str]:
-    global _session, _url, _access_token
+    global _session, _url, _access_token, _current_loop
 
     url, token = await _ensure_auth()
 
     # Close stale session (different event loop or closed)
-    if _session:
-        try:
-            loop_ok = _session._loop and not _session._loop.is_closed()
-        except AttributeError:
-            loop_ok = True  # aiohttp version doesn't expose _loop
-        if _session.closed or not loop_ok:
-            try:
-                await _session.close()
-            except Exception:
-                pass
-            _session = None
+    if _is_session_stale():
+        await _close_session()
 
     if _session and not _session.closed:
         _session.headers.update({"Authorization": f"Bearer {token}"})
@@ -361,6 +384,7 @@ async def _get_session() -> tuple[aiohttp.ClientSession, str]:
             "Content-Type": "application/json",
         },
     )
+    _current_loop = asyncio.get_running_loop()
     return _session, url
 
 
@@ -368,19 +392,35 @@ async def _get_session() -> tuple[aiohttp.ClientSession, str]:
 
 async def graphql(query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
     """Execute a GraphQL query/mutation against the Caido API."""
-    session, url = await _get_session()
+    global _session, _current_loop
+
     payload: dict[str, Any] = {"query": query}
     if variables:
         payload["variables"] = variables
 
-    async with session.post(f"{url}/graphql", json=payload) as resp:
-        if resp.status != 200:
-            text = await resp.text()
-            raise RuntimeError(f"GraphQL HTTP {resp.status}: {text[:500]}")
-        data = await resp.json()
-        if "errors" in data:
-            raise RuntimeError(f"GraphQL errors: {data['errors']}")
-        return data.get("data", {})
+    for attempt in range(2):
+        session, url = await _get_session()
+        try:
+            async with session.post(f"{url}/graphql", json=payload) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    raise RuntimeError(f"GraphQL HTTP {resp.status}: {text[:500]}")
+                data = await resp.json()
+                if "errors" in data:
+                    raise RuntimeError(f"GraphQL errors: {data['errors']}")
+                return data.get("data", {})
+        except (RuntimeError, aiohttp.ClientError) as e:
+            error_str = str(e).lower()
+            # Stale session or connection error — force new session and retry
+            if attempt == 0 and any(kw in error_str for kw in [
+                "timeout context manager", "event loop is closed",
+                "connection reset", "session is closed",
+            ]):
+                await _close_session()
+                continue
+            raise
+    # Should not reach here, but just in case
+    raise RuntimeError("graphql: failed after 2 attempts")
 
 
 async def health() -> dict[str, Any]:
@@ -388,10 +428,14 @@ async def health() -> dict[str, Any]:
     try:
         data = await graphql("query { health { status version } }")
         return data.get("health", {})
-    except Exception:
-        session, url = await _get_session()
-        async with session.get(f"{url}/") as resp:
-            return {"status": "ok" if resp.status == 200 else "error", "statusCode": resp.status}
+    except Exception as e:
+        # Try a simple HTTP GET as fallback
+        try:
+            session, url = await _get_session()
+            async with session.get(f"{url}/") as resp:
+                return {"status": "ok" if resp.status == 200 else "error", "statusCode": resp.status}
+        except Exception:
+            return {"status": "error", "error": str(e)}
 
 
 async def close() -> None:
