@@ -15,6 +15,7 @@ Uses the actual Caido GraphQL schema:
 """
 
 from __future__ import annotations
+import base64
 
 import shlex
 import sys
@@ -318,10 +319,18 @@ async def export_curl(
         if node is None:
             return {"error": f"Request {request_id!r} not found"}
 
-        raw = node.get("raw") or ""
+        raw_b64 = node.get("raw") or ""
         is_tls = node.get("isTls", False)
         host = node.get("host", "")
         port = node.get("port", 443 if is_tls else 80)
+
+        # Decode base64 raw bytes (GraphQL Blob type)
+        raw = ""
+        if raw_b64:
+            try:
+                raw = base64.b64decode(raw_b64).decode("utf-8")
+            except Exception:
+                raw = raw_b64  # Fallback to treating as plain string
 
         # If we have raw bytes, parse them to build the curl command
         if raw:
