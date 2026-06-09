@@ -338,8 +338,20 @@ async def _get_session() -> tuple[aiohttp.ClientSession, str]:
 
     url, token = await _ensure_auth()
 
+    # Close stale session (different event loop or closed)
+    if _session:
+        try:
+            loop_ok = _session._loop and not _session._loop.is_closed()
+        except AttributeError:
+            loop_ok = True  # aiohttp version doesn't expose _loop
+        if _session.closed or not loop_ok:
+            try:
+                await _session.close()
+            except Exception:
+                pass
+            _session = None
+
     if _session and not _session.closed:
-        # Update token in case it was refreshed
         _session.headers.update({"Authorization": f"Bearer {token}"})
         return _session, url
 
