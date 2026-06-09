@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 
-from . import schemas, tools
+from . import schemas, caido_tools as tools
 
 logger = logging.getLogger(__name__)
 
