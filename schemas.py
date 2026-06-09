@@ -107,12 +107,12 @@ CAIDO_GET = {
     },
 }
 
-CAIDO_REPLAY = {
-    "name": "caido_replay",
+CAIDO_REPLAY_REQUEST = {
+    "name": "caido_replay_request",
     "description": (
-        "Replay an intercepted HTTP request through the Caido proxy.  Use this "
-        "to re-send a previously captured request and observe the new response, "
-        "which is useful for testing mutations or verifying vulnerabilities."
+        "Replay an intercepted HTTP request through the Caido proxy.  Fetches "
+        "the request by ID and re-sends it, preserving the original host, port, "
+        "and TLS settings.  Use this to test mutations or verify vulnerabilities."
     ),
     "parameters": {
         "type": "object",
@@ -162,8 +162,8 @@ CAIDO_SEND_RAW = {
     },
 }
 
-CAIDO_SESSIONS = {
-    "name": "caido_sessions",
+CAIDO_REPLAY_SESSIONS = {
+    "name": "caido_replay_sessions",
     "description": (
         "List replay sessions in the current Caido project.  Use this to see "
         "available sessions before replaying requests or to review session state."
@@ -181,8 +181,8 @@ CAIDO_SESSIONS = {
     },
 }
 
-CAIDO_CREATE_SESSION = {
-    "name": "caido_create_session",
+CAIDO_CREATE_REPLAY_SESSION = {
+    "name": "caido_create_replay_session",
     "description": (
         "Create a new replay session in Caido.  Use this before replaying "
         "requests that should be grouped under a named session."
@@ -194,13 +194,58 @@ CAIDO_CREATE_SESSION = {
                 "type": "string",
                 "description": "Name for the new replay session.",
             },
+            "collection_id": {
+                "type": "string",
+                "description": "Optional collection ID to place the session in.",
+            },
         },
         "required": ["name"],
     },
 }
 
-CAIDO_COLLECTIONS = {
-    "name": "caido_collections",
+CAIDO_RENAME_REPLAY_SESSION = {
+    "name": "caido_rename_replay_session",
+    "description": (
+        "Rename an existing replay session.  Use this to give sessions "
+        "descriptive names for organization."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "session_id": {
+                "type": "string",
+                "description": "ID of the session to rename.",
+            },
+            "name": {
+                "type": "string",
+                "description": "New name for the session.",
+            },
+        },
+        "required": ["session_id", "name"],
+    },
+}
+
+CAIDO_DELETE_REPLAY_SESSIONS = {
+    "name": "caido_delete_replay_sessions",
+    "description": (
+        "Delete one or more replay sessions by ID.  Use this to clean up "
+        "sessions that are no longer needed."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "session_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of session IDs to delete.",
+            },
+        },
+        "required": ["session_ids"],
+    },
+}
+
+CAIDO_REPLAY_COLLECTIONS = {
+    "name": "caido_replay_collections",
     "description": (
         "List replay collections in the current Caido project.  Use this to "
         "see what collections of replay requests are available."
@@ -242,6 +287,24 @@ CAIDO_FINDINGS = {
     },
 }
 
+CAIDO_GET_FINDING = {
+    "name": "caido_get_finding",
+    "description": (
+        "Retrieve a specific security finding by ID.  Use this to get full "
+        "details of a finding after listing with caido_findings."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "finding_id": {
+                "type": "string",
+                "description": "The ID of the finding to retrieve.",
+            },
+        },
+        "required": ["finding_id"],
+    },
+}
+
 CAIDO_CREATE_FINDING = {
     "name": "caido_create_finding",
     "description": (
@@ -271,6 +334,55 @@ CAIDO_CREATE_FINDING = {
             },
         },
         "required": ["title"],
+    },
+}
+
+CAIDO_UPDATE_FINDING = {
+    "name": "caido_update_finding",
+    "description": (
+        "Update an existing security finding.  Use this to modify title, "
+        "description, or severity of a finding."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "finding_id": {
+                "type": "string",
+                "description": "ID of the finding to update.",
+            },
+            "title": {
+                "type": "string",
+                "description": "New title for the finding.",
+            },
+            "description": {
+                "type": "string",
+                "description": "New description for the finding.",
+            },
+            "severity": {
+                "type": "string",
+                "description": "New severity level: critical, high, medium, low, or info.",
+                "enum": ["critical", "high", "medium", "low", "info"],
+            },
+        },
+        "required": ["finding_id"],
+    },
+}
+
+CAIDO_EXPORT_CURL = {
+    "name": "caido_export_curl",
+    "description": (
+        "Export an intercepted HTTP request as a curl command.  Use this to "
+        "generate PoC commands for reports or manual testing."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "request_id": {
+                "type": "string",
+                "description": "The ID of the request to export as curl.",
+            },
+        },
+        "required": ["request_id"],
     },
 }
 
@@ -365,22 +477,3 @@ CAIDO_HEALTH = {
         "required": [],
     },
 }
-
-# Convenience list of all tool schemas for registration
-ALL_SCHEMAS = [
-    CAIDO_SEARCH,
-    CAIDO_RECENT,
-    CAIDO_GET,
-    CAIDO_REPLAY,
-    CAIDO_SEND_RAW,
-    CAIDO_SESSIONS,
-    CAIDO_CREATE_SESSION,
-    CAIDO_COLLECTIONS,
-    CAIDO_FINDINGS,
-    CAIDO_CREATE_FINDING,
-    CAIDO_SCOPES,
-    CAIDO_FILTERS,
-    CAIDO_ENVS,
-    CAIDO_PROJECTS,
-    CAIDO_HEALTH,
-]

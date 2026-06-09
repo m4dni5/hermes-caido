@@ -7,9 +7,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "lib"))
 
 from http_requests import search, recent, get, get_response, export_curl
-from replay import replay, send_raw, sessions, create_session, collections
+from replay import (
+    replay, send_raw, sessions, create_session, collections,
+    rename_session, delete_sessions,
+)
 from findings import list_findings, get_finding, create_finding, update_finding
-from management import scopes, get_scope, create_scope, delete_scope, filters, create_filter, delete_filter, environments, create_environment, delete_environment, projects, create_project, delete_project, hosted_files, tasks, cancel_task
+from management import (
+    scopes, get_scope, create_scope, delete_scope,
+    filters, create_filter, delete_filter,
+    environments, create_environment, delete_environment,
+    projects, create_project, delete_project,
+    hosted_files, tasks, cancel_task,
+)
 from output import format_response, format_entry_compact, truncate_body, extract_headers, format_curl
 from client import health as client_health
 
@@ -54,7 +63,7 @@ async def handle_get(args: dict, **kwargs) -> str:
         return json.dumps({"error": str(e)})
 
 
-async def handle_replay(args: dict, **kwargs) -> str:
+async def handle_replay_request(args: dict, **kwargs) -> str:
     try:
         data = await replay(request_id=args["request_id"])
         return json.dumps(data)
@@ -76,7 +85,7 @@ async def handle_send_raw(args: dict, **kwargs) -> str:
         return json.dumps({"error": str(e)})
 
 
-async def handle_sessions(args: dict, **kwargs) -> str:
+async def handle_replay_sessions(args: dict, **kwargs) -> str:
     try:
         data = await sessions(limit=args.get("limit", 50))
         return json.dumps(data)
@@ -84,7 +93,7 @@ async def handle_sessions(args: dict, **kwargs) -> str:
         return json.dumps({"error": str(e)})
 
 
-async def handle_create_session(args: dict, **kwargs) -> str:
+async def handle_create_replay_session(args: dict, **kwargs) -> str:
     try:
         data = await create_session(
             name=args["name"],
@@ -95,7 +104,26 @@ async def handle_create_session(args: dict, **kwargs) -> str:
         return json.dumps({"error": str(e)})
 
 
-async def handle_collections(args: dict, **kwargs) -> str:
+async def handle_rename_replay_session(args: dict, **kwargs) -> str:
+    try:
+        data = await rename_session(
+            session_id=args["session_id"],
+            name=args["name"],
+        )
+        return json.dumps(data)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+async def handle_delete_replay_sessions(args: dict, **kwargs) -> str:
+    try:
+        data = await delete_sessions(ids=args["session_ids"])
+        return json.dumps(data)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+async def handle_replay_collections(args: dict, **kwargs) -> str:
     try:
         data = await collections(limit=args.get("limit", 50))
         return json.dumps(data)
@@ -114,6 +142,14 @@ async def handle_findings(args: dict, **kwargs) -> str:
         return json.dumps({"error": str(e)})
 
 
+async def handle_get_finding(args: dict, **kwargs) -> str:
+    try:
+        data = await get_finding(finding_id=args["finding_id"])
+        return json.dumps(data)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 async def handle_create_finding(args: dict, **kwargs) -> str:
     try:
         data = await create_finding(
@@ -122,6 +158,27 @@ async def handle_create_finding(args: dict, **kwargs) -> str:
             severity=args.get("severity"),
             request_id=args.get("request_id"),
         )
+        return json.dumps(data)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+async def handle_update_finding(args: dict, **kwargs) -> str:
+    try:
+        data = await update_finding(
+            finding_id=args["finding_id"],
+            title=args.get("title"),
+            description=args.get("description"),
+            severity=args.get("severity"),
+        )
+        return json.dumps(data)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+async def handle_export_curl(args: dict, **kwargs) -> str:
+    try:
+        data = await export_curl(request_id=args["request_id"])
         return json.dumps(data)
     except Exception as e:
         return json.dumps({"error": str(e)})
