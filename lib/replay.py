@@ -82,14 +82,20 @@ _CREATE_REPLAY_SESSION_COLLECTION = """mutation CreateReplaySessionCollection($i
   }
 }"""
 
-_START_REPLAY_TASK = """mutation StartReplayTask($sessionId: ID!, $input: StartReplayTaskInput!) {
-  startReplayTask(sessionId: $sessionId, input: $input) {
+_START_REPLAY_TASK = """mutation StartReplayTask($sessionId: ID!) {
+  startReplayTask(sessionId: $sessionId) {
     error {
       __typename
-      ... on CloudUserError { message }
-      ... on OtherUserError { message }
+      ... on CloudUserError { code }
+      ... on OtherUserError { code }
     }
     task { id }
+  }
+}"""
+
+_UPDATE_REPLAY_ENTRY_DRAFT = """mutation UpdateReplayEntryDraft($id: ID!, $input: UpdateReplayEntryDraftInput!) {
+  updateReplayEntryDraft(id: $id, input: $input) {
+    entry { id }
   }
 }"""
 
