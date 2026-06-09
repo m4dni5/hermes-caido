@@ -1,1 +1,8 @@
 __pycache__/
+*.pyc
+*.pyo
+*.swp
+*.swo
+*~
+.env
+.secrets.json
