@@ -1,7 +1,12 @@
-"""Replay operations for the Caido CLI.
+"""Replay operations for the Caido plugin.
 
 Uses raw GraphQL queries via the client module — no SDK dependency.
-Matches the real Caido GraphQL schema (replay sessions, collections, tasks).
+Matches the real Caido v0.57.0 GraphQL schema.
+
+Replay workflow (v0.57.0):
+1. create_session(name, request_id) — creates session seeded with request
+2. rename_session(session_id, name) — give it a descriptive name
+3. start_replay_task(session_id) — replay the entry in the session
 """
 
 from __future__ import annotations
@@ -10,7 +15,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from client import graphql  # noqa: E402
-from http_requests import get as get_request  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # GraphQL fragments
@@ -82,14 +86,20 @@ _CREATE_REPLAY_SESSION_COLLECTION = """mutation CreateReplaySessionCollection($i
   }
 }"""
 
-_START_REPLAY_TASK = """mutation StartReplayTask($sessionId: ID!, $input: StartReplayTaskInput!) {
-  startReplayTask(sessionId: $sessionId, input: $input) {
+_START_REPLAY_TASK = """mutation StartReplayTask($sessionId: ID!) {
+  startReplayTask(sessionId: $sessionId) {
     error {
       __typename
       ... on CloudUserError { code }
       ... on OtherUserError { code }
     }
     task { id }
+  }
+}"""
+
+_MOVE_REPLAY_SESSION = """mutation MoveReplaySession($id: ID!, $collectionId: ID!) {
+  moveReplaySession(id: $id, collectionId: $collectionId) {
+    session { id name }
   }
 }"""
 
@@ -101,8 +111,7 @@ _START_REPLAY_TASK = """mutation StartReplayTask($sessionId: ID!, $input: StartR
 async def replay(request_id: str, client=None) -> dict:
     """Replay an existing request by its request ID.
 
-    Composite operation: fetches the request, extracts raw HTTP bytes,
-    then sends via the replay system.
+    v0.57.0 workflow: create session with requestSource.id, then start task.
 
     Args:
         request_id: The ID of an existing request to replay.
@@ -112,80 +121,31 @@ async def replay(request_id: str, client=None) -> dict:
         Dict with ``status``, ``sessionId``, ``taskId`` (or ``error``).
     """
     try:
-        # Step 1: Fetch the request with raw bytes
-        req = await get_request(request_id=request_id)
-        if "error" in req:
-            return req
-
-        raw = req.get("requestRaw")
-        if not raw:
-            return {
-                "error": f"Request {request_id!r} has no raw bytes. "
-                "Cannot replay without raw HTTP content."
-            }
-
-        host = req.get("host", "")
-        port = req.get("port", 443)
-        is_tls = req.get("isTls", True)
-
-        # Step 2: Send via replay system
-        return await send_raw(
-            raw_request=raw,
-            host=host,
-            port=port,
-            tls=is_tls,
-        )
-    except Exception as exc:
-        return {"error": str(exc)}
-
-
-async def send_raw(
-    raw_request: str,
-    host: str,
-    port: int = 443,
-    tls: bool = True,
-    sni: str | None = None,
-    client=None,
-) -> dict:
-    """Send a raw HTTP request through the Caido replay system.
-
-    Creates a replay session, then starts a replay task with the raw
-    request content.
-
-    Args:
-        raw_request: The full raw HTTP request as a string.
-        host:        Target host.
-        port:        Target port (default 443).
-        tls:         Whether to use TLS (default True).
-        sni:         Server Name Indication value (optional).
-        client:      Unused (kept for signature compat).
-
-    Returns:
-        Dict with ``sessionId``, ``taskId`` (or ``error``).
-    """
-    try:
-        # Step 1: Create a replay session for this request
-        session_result = await create_session(name=f"replay-{host}")
+        # Step 1: Create session seeded with the request
+        session_result = await create_session(request_id=request_id)
         if "error" in session_result:
             return session_result
 
         session_id = session_result["id"]
 
-        # Step 2: Start a replay task with the raw request
-        task_input: dict = {
-            "requestContent": raw_request,
-            "host": host,
-            "port": port,
-            "isTls": tls,
-        }
-        if sni is not None:
-            task_input["sni"] = sni
+        # Step 2: Start replay task
+        return await start_replay_task(session_id)
+    except Exception as exc:
+        return {"error": str(exc)}
 
-        data = await graphql(_START_REPLAY_TASK, {
-            "sessionId": session_id,
-            "input": task_input,
-        })
 
+async def start_replay_task(session_id: str, client=None) -> dict:
+    """Start a replay task on an existing session.
+
+    Args:
+        session_id: ID of the session to replay.
+        client:     Unused (kept for signature compat).
+
+    Returns:
+        Dict with ``status``, ``sessionId``, ``taskId`` (or ``error``).
+    """
+    try:
+        data = await graphql(_START_REPLAY_TASK, {"sessionId": session_id})
         result = data.get("startReplayTask", {})
         error = result.get("error")
         if error:
@@ -226,13 +186,17 @@ async def sessions(limit: int = 50, client=None) -> list:
 
 async def create_session(
     name: str | None = None,
+    request_id: str | None = None,
     collection_id: str | None = None,
     client=None,
 ) -> dict:
     """Create a new replay session.
 
+    v0.57.0: use requestSource.id to seed session with an existing request.
+
     Args:
         name:          Optional session name (set via rename after creation).
+        request_id:    Optional request ID to seed the session with.
         collection_id: Optional collection to place the session in.
         client:        Unused (kept for signature compat).
 
@@ -241,6 +205,8 @@ async def create_session(
     """
     try:
         input_vars: dict = {"kind": "HTTP"}
+        if request_id:
+            input_vars["requestSource"] = {"id": request_id}
         if collection_id:
             input_vars["collectionId"] = collection_id
 
@@ -303,6 +269,31 @@ async def delete_sessions(ids: list[str], client=None) -> dict:
         result = data.get("deleteReplaySessions", {})
         deleted_ids = result.get("deletedIds", [])
         return {"deleted": len(deleted_ids), "ids": deleted_ids}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+async def move_session(session_id: str, collection_id: str, client=None) -> dict:
+    """Move a replay session to a collection.
+
+    Args:
+        session_id:    ID of the session to move.
+        collection_id: ID of the target collection.
+        client:        Unused (kept for signature compat).
+
+    Returns:
+        Dict with updated session info (or ``error``).
+    """
+    try:
+        data = await graphql(
+            _MOVE_REPLAY_SESSION,
+            {"id": session_id, "collectionId": collection_id},
+        )
+        result = data.get("moveReplaySession", {})
+        session = result.get("session", {})
+        if not session:
+            return {"error": "Failed to move session (no session in response)"}
+        return {"id": session.get("id"), "name": session.get("name")}
     except Exception as exc:
         return {"error": str(exc)}
 

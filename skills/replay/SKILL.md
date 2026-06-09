@@ -9,30 +9,135 @@ tags: [worker, offensive]
 ## When to Use This Skill
 
 Load this skill when you need to:
+- Replay requests from HTTP history
+- Edit requests and replay them (change path, method, headers, body)
 - Manage replay sessions (create, rename, delete, list)
 - Manage replay collections (create, list)
-- Edit a request and replay it (change path, method, headers, body)
-- Compose multi-step replay workflows
 
-**For simple operations, use the plugin tools directly** — `caido_search`, `caido_get`, `caido_replay_request`, `caido_send_raw`, `caido_health`. No `execute_code` needed.
+**For simple operations, use the plugin tools directly** — `caido_search`, `caido_get`, `caido_findings`, `caido_health`. No `execute_code` needed.
 
 ## Import Pattern
 
 ```python
-import asyncio, sys
+import asyncio, base64, sys
 sys.path.insert(0, "/home/matt/src/hermes-caido/lib")
 
 from replay import (
-    send_raw, sessions, create_session,
+    replay, sessions, create_session, start_replay_task,
     rename_session, delete_sessions, collections, create_collection,
 )
 from http_requests import get
+from client import graphql
 ```
 
 All functions are `async`. Wrap in `asyncio.run()`:
 
 ```python
 result = asyncio.run(sessions(limit=50))
+```
+
+## Replay Workflow (v0.57.0)
+
+The Caido v0.57.0 replay system uses sessions with entries. Each session contains one or more entries (requests). The workflow:
+
+1. **Create session from request** — `createSession(request_id="123")` seeds session with request
+2. **Rename session** — `renameSession(session_id, "my-test")`
+3. **Start replay task** — `startReplayTask(session_id)` replays the entry
+4. **Get results** — check HTTP history for the replayed request
+
+### Quick replay (one-liner)
+
+```python
+result = asyncio.run(replay(request_id="123"))
+# Returns: {"status": "DONE", "sessionId": "5", "taskId": "1"}
+```
+
+### Step-by-step replay
+
+```python
+# Step 1: Create session from request
+session = asyncio.run(create_session(request_id="123"))
+session_id = session["id"]
+
+# Step 2: Rename
+asyncio.run(rename_session(session_id, "idor-test"))
+
+# Step 3: Start replay
+result = asyncio.run(start_replay_task(session_id))
+```
+
+## Edit and Replay Pattern
+
+To modify a request before replaying:
+
+1. Get the request raw bytes
+2. Modify the raw HTTP request
+3. Create session with the modified request via `updateReplayEntryDraft`
+
+### Get session entries
+
+```python
+q = """
+query {
+    replaySession(id: "SESSION_ID") {
+        id name
+        ... on ReplaySessionHttp {
+            entries(first: 10) {
+                edges {
+                    node {
+                        id
+                        ... on ReplayEntryHttp {
+                            raw
+                            connection { host port isTLS }
+                            request { id method path host }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+data = asyncio.run(graphql(q))
+entries = data["replaySession"]["entries"]["edges"]
+entry_id = entries[0]["node"]["id"]
+raw_b64 = entries[0]["node"]["raw"]
+```
+
+### Edit entry draft
+
+```python
+# Decode current request
+raw_bytes = base64.b64decode(raw_b64).decode("utf-8")
+
+# Modify it (e.g., change path)
+lines = raw_bytes.split("\r\n")
+parts = lines[0].split(" ", 2)
+parts[1] = "/api/admin/users"
+lines[0] = " ".join(parts)
+modified_raw = "\r\n".join(lines)
+
+# Update the draft
+edit_mutation = """
+mutation UpdateReplayEntryDraft($id: ID!, $input: UpdateReplayEntryDraftInput!) {
+    updateReplayEntryDraft(id: $id, input: $input) {
+        entry { id }
+    }
+}
+"""
+asyncio.run(graphql(edit_mutation, {
+    "id": entry_id,
+    "input": {
+        "http": {
+            "raw": base64.b64encode(modified_raw.encode()).decode(),
+            "connection": {"host": "target.com", "port": 443, "isTLS": True},
+            "settings": {"placeholders": []},
+            "editorState": base64.b64encode(b"{}").decode(),
+        }
+    }
+}))
+
+# Start replay
+result = asyncio.run(start_replay_task(session_id))
 ```
 
 ## Session Management
@@ -44,17 +149,16 @@ all_sessions = asyncio.run(sessions(limit=50))
 # Returns: [{"id": "123", "name": "my-session"}, ...]
 ```
 
-### Create named session
+### Create session (without request)
 
 ```python
-session = asyncio.run(create_session(name="idor-test"))
-# Returns: {"id": "456", "name": "idor-test"}
+session = asyncio.run(create_session(name="empty-session"))
 ```
 
-### Create session in collection
+### Create session with request
 
 ```python
-session = asyncio.run(create_session(name="auth-bypass", collection_id="789"))
+session = asyncio.run(create_session(name="idor-test", request_id="123"))
 ```
 
 ### Rename session
@@ -81,74 +185,6 @@ colls = asyncio.run(collections(limit=50))
 
 ```python
 coll = asyncio.run(create_collection(name="Auth Bypass Tests"))
-```
-
-## Edit and Replay Pattern
-
-The core offensive workflow: take an existing request, mutate it, replay preserving auth.
-
-```python
-async def edit_and_replay(request_id, path=None, method=None, headers=None, body=None):
-    """Fetch request, apply mutations, replay."""
-    req = await get(request_id=request_id)
-    if "error" in req:
-        return req
-
-    raw = req.get("requestRaw", "")
-    host = req.get("host", "")
-    port = req.get("port", 443)
-    is_tls = req.get("isTls", True)
-
-    # Parse raw request
-    lines = raw.split("\r\n") if "\r\n" in raw else raw.split("\n")
-    request_line = lines[0]
-    req_headers = []
-    req_body = ""
-    in_body = False
-
-    for line in lines[1:]:
-        if in_body:
-            req_body += line
-            continue
-        if line.strip() == "":
-            in_body = True
-            continue
-        if ":" in line:
-            req_headers.append(line)
-
-    # Apply mutations
-    parts = request_line.split(" ", 2)
-    if method:
-        parts[0] = method
-    if path:
-        parts[1] = path
-    request_line = " ".join(parts)
-
-    if headers:
-        for name, value in headers:
-            req_headers = [h for h in req_headers if not h.lower().startswith(name.lower() + ":")]
-            req_headers.append(f"{name}: {value}")
-
-    if body is not None:
-        req_body = body
-        req_headers = [h for h in req_headers if not h.lower().startswith("content-length:")]
-        req_headers.append(f"Content-Length: {len(body)}")
-
-    # Reconstruct raw request
-    new_raw = request_line + "\r\n"
-    new_raw += "\r\n".join(req_headers) + "\r\n"
-    new_raw += "\r\n" + req_body
-
-    return await send_raw(raw_request=new_raw, host=host, port=port, tls=is_tls)
-
-# Usage
-result = asyncio.run(edit_and_replay(
-    request_id="12345",
-    path="/api/admin/users",
-    method="POST",
-    headers=[("X-Forwarded-For", "127.0.0.1")],
-    body='{"role": "admin"}',
-))
 ```
 
 ## HTTPQL Reference
@@ -182,21 +218,12 @@ Caido's query language for filtering requests. String values MUST be quoted. Int
 **Integer:** `eq`, `ne`, `gt`, `gte`, `lt`, `lte`
 **Logical:** `AND`, `OR`, parentheses for grouping
 
-### Examples
-
-```
-req.method.eq:"POST" AND resp.code.eq:200
-req.host.cont:"api" OR req.path.cont:"/api/"
-resp.code.gte:400 AND resp.code.lt:500
-req.path.regex:"/(login|auth|signin|oauth)/"
-source:"replay" OR source:"automate"
-req.path.ncont:"/static" AND req.path.ncont:"/health"
-```
-
 ## Pitfalls
 
 1. **All lib/ functions are async** — always wrap in `asyncio.run()`
 2. **Raw request format** — use `\r\n` line endings, not `\n`
 3. **Content-Length** — update after modifying body
 4. **Session create has no name field** — create then rename
-5. **`startReplayTask` schema mismatch** — v0.57.0 may not accept `input` argument. If `send_raw` fails, use curl through the Caido proxy: `curl -sk -x http://127.0.0.1:8080 https://target/path`
+5. **Entry raw is base64-encoded** — decode before editing, re-encode after
+6. **Entries are ReplayEntry interface** — use `... on ReplayEntryHttp` inline fragment
+7. **No `send_raw` mutation** — v0.57.0 doesn't support sending arbitrary raw requests via GraphQL. Use `createSession` + `updateReplayEntryDraft` + `startReplayTask` instead

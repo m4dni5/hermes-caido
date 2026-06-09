@@ -1,10 +1,11 @@
 """Hermes Agent Caido plugin — registration.
 
-Registers 8 hot-path tools for interacting with the Caido HTTP proxy:
-search, get, recent, replay, send_raw, findings, create_finding, health.
+Registers hot-path tools for interacting with the Caido HTTP proxy:
+search, get, recent, findings, create_finding, health, setup.
 
-All other operations (session management, findings CRUD, export curl,
-scopes, filters, envs, projects) are accessed via bundled skills:
+All other operations (replay, session management, findings CRUD,
+export curl, scopes, filters, envs, projects) are accessed via
+bundled skills:
   - caido:replay — session management, edit-and-replay
   - caido:utils  — findings, export curl, scopes, filters, envs, projects
 
@@ -28,8 +29,6 @@ def register(ctx) -> None:  # noqa: ANN001 — plugin context type
         ("caido_search",         schemas.CAIDO_SEARCH,         tools.handle_search,         "Search proxy history with HTTPQL"),
         ("caido_recent",         schemas.CAIDO_RECENT,         tools.handle_recent,         "Get recent intercepted requests"),
         ("caido_get",            schemas.CAIDO_GET,            tools.handle_get,            "Get request/response by ID"),
-        ("caido_replay_request", schemas.CAIDO_REPLAY_REQUEST, tools.handle_replay_request, "Replay a request through the proxy"),
-        ("caido_send_raw",       schemas.CAIDO_SEND_RAW,       tools.handle_send_raw,       "Send a raw HTTP request"),
         ("caido_findings",       schemas.CAIDO_FINDINGS,       tools.handle_findings,       "List security findings"),
         ("caido_create_finding", schemas.CAIDO_CREATE_FINDING, tools.handle_create_finding, "Create a security finding"),
         ("caido_health",         schemas.CAIDO_HEALTH,         tools.handle_health,         "Check Caido health"),
