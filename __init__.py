@@ -33,6 +33,7 @@ def register(ctx) -> None:  # noqa: ANN001 — plugin context type
         ("caido_findings",       schemas.CAIDO_FINDINGS,       tools.handle_findings,       "List security findings"),
         ("caido_create_finding", schemas.CAIDO_CREATE_FINDING, tools.handle_create_finding, "Create a security finding"),
         ("caido_health",         schemas.CAIDO_HEALTH,         tools.handle_health,         "Check Caido health"),
+        ("caido_setup",          schemas.CAIDO_SETUP,          tools.handle_setup,          "Auth status, test connectivity, clear cache, setup credentials"),
     ]
 
     for name, schema, handler, description in _tools:

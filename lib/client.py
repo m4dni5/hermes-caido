@@ -426,8 +426,8 @@ async def graphql(query: str, variables: dict[str, Any] | None = None) -> dict[s
 async def health() -> dict[str, Any]:
     """Check Caido health via GraphQL."""
     try:
-        data = await graphql("query { health { status version } }")
-        return data.get("health", {})
+        data = await graphql("query { requests(first: 1) { edges { node { id } } } }")
+        return {"status": "ok", "graphql": True}
     except Exception as e:
         # Try a simple HTTP GET as fallback
         try:

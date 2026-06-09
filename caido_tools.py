@@ -222,3 +222,22 @@ async def handle_health(args: dict, **kwargs) -> str:
         return json.dumps(data)
     except Exception as e:
         return json.dumps({"error": str(e)})
+
+
+async def handle_setup(args: dict, **kwargs) -> str:
+    try:
+        from auth import auth_status, clear_cache, test_connection, setup as setup_auth
+        action = args.get("action", "status")
+        if action == "status":
+            data = await auth_status()
+        elif action == "test":
+            data = await test_connection()
+        elif action == "clear":
+            data = await clear_cache()
+        elif action == "setup":
+            data = await setup_auth(pat=args.get("pat"), url=args.get("url"))
+        else:
+            data = {"error": f"Unknown action: {action}"}
+        return json.dumps(data)
+    except Exception as e:
+        return json.dumps({"error": str(e)})

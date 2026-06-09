@@ -477,3 +477,33 @@ CAIDO_HEALTH = {
         "required": [],
     },
 }
+
+
+CAIDO_SETUP = {
+    "name": "caido_setup",
+    "description": (
+        "Check Caido auth status, test connectivity, clear cached tokens, "
+        "or set up credentials.  Use this to diagnose auth issues or "
+        "configure the Caido connection."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "Action to perform: 'status' (check auth), 'test' (full connectivity test), 'clear' (clear token cache), 'setup' (configure credentials).",
+                "enum": ["status", "test", "clear", "setup"],
+                "default": "status",
+            },
+            "pat": {
+                "type": "string",
+                "description": "Caido Personal Access Token (only for 'setup' action).",
+            },
+            "url": {
+                "type": "string",
+                "description": "Caido instance URL (only for 'setup' action).",
+            },
+        },
+        "required": [],
+    },
+}
