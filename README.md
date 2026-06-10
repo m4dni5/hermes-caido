@@ -16,40 +16,19 @@ Hermes Agent plugin for the [Caido](https://caido.io) HTTP proxy. Search history
 | `caido_health` | Check Caido connectivity and auth |
 | `caido_setup` | Diagnose auth issues, test connection |
 
-**2 bundled skills** for everything else — loaded on demand, zero context cost until needed:
+**Bundled skills** for everything else — loaded on demand, zero context cost until needed:
 
 | Skill | Description |
 |---|---|
 | `caido:replay` | Session management, edit-and-replay, HTTPQL reference |
 | `caido:utils` | Findings CRUD, export curl, scopes, filters, environments, projects |
+| `caido:automate` | Coming soon! |
+| `caido:intercept` | Coming soon! |
 
 ## Installation
 
 ```bash
 git clone https://github.com/m4dni5/hermes-caido ~/.hermes/plugins/caido
-```
-
-### Environment Variables
-
-Add to `~/.hermes/.env`:
-
-```
-CAIDO_PAT=your_personal_access_token
-CAIDO_URL=http://127.0.0.1:8081
-```
-
-The plugin will not load if either variable is missing.
-
-### Authentication
-
-Caido uses OAuth2 device code flow. On first use, the plugin will authenticate automatically using your PAT. Tokens are cached at `~/.config/caido-py/secrets.json`.
-
-If you hit auth issues:
-
-```
-caido_setup(action="status")   # Check what's configured
-caido_setup(action="test")     # Full connectivity test
-caido_setup(action="clear")    # Clear token cache and re-auth
 ```
 
 ## Usage
