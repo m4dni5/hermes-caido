@@ -1,295 +1,92 @@
+"""Caido management operations — sync wrappers.
+
+Usage:
+    import management
+    scopes = management.scopes()
+    management.create_scope(name="Target", allow=["*.target.com"])
 """
-Caido management operations via raw GraphQL.
-Uses the real Caido GraphQL schema (error unions with __typename).
-"""
 
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent))
-from client import graphql
+from __future__ import annotations
+import asyncio
+from graphql.management import (
+    scopes as _scopes,
+    get_scope as _get_scope,
+    create_scope as _create_scope,
+    delete_scope as _delete_scope,
+    filters as _filters,
+    create_filter as _create_filter,
+    delete_filter as _delete_filter,
+    environments as _environments,
+    create_environment as _create_environment,
+    delete_environment as _delete_environment,
+    projects as _projects,
+    create_project as _create_project,
+    delete_project as _delete_project,
+    hosted_files as _hosted_files,
+    tasks as _tasks,
+    cancel_task as _cancel_task,
+)
 
 
-# ─── Scopes ──────────────────────────────────────────────────────────────────
+def scopes(limit: int = 50) -> list:
+    return asyncio.run(_scopes(limit))
 
-SCOPES_QUERY = """query Scopes { scopes { id name } }"""
 
-GET_SCOPE_QUERY = """query Scope($id: ID!) { scope(id: $id) { id name allow deny } }"""
+def get_scope(scope_id: str) -> dict:
+    return asyncio.run(_get_scope(scope_id))
 
-CREATE_SCOPE_MUTATION = """mutation CreateScope($input: CreateScopeInput!) {
-  createScope(input: $input) {
-    error { __typename ... on NameTakenUserError { message } ... on PermissionDeniedUserError { message } ... on OtherUserError { message } }
-    scope { id name }
-  }
-}"""
 
-DELETE_SCOPE_MUTATION = """mutation DeleteScope($id: ID!) {
-  deleteScope(id: $id) {
-    deletedId
-    error { __typename ... on UnknownIdUserError { message } ... on OtherUserError { message } }
-  }
-}"""
+def create_scope(name: str, allow: list[str] | None = None, deny: list[str] | None = None) -> dict:
+    return asyncio.run(_create_scope(name=name, allow=allow, deny=deny))
 
 
-# ─── Filters ─────────────────────────────────────────────────────────────────
+def delete_scope(scope_id: str) -> dict:
+    return asyncio.run(_delete_scope(scope_id))
 
-FILTERS_QUERY = """query FilterPresets { filterPresets { id name alias clause { __typename ... on HTTPQL { code } } } }"""
 
-CREATE_FILTER_MUTATION = """mutation CreateFilterPreset($input: CreateFilterPresetInput!) {
-  createFilterPreset(input: $input) {
-    error { __typename ... on NameTakenUserError { message } ... on AliasTakenUserError { message } ... on PermissionDeniedUserError { message } ... on OtherUserError { message } }
-    filter { id name }
-  }
-}"""
+def filters(limit: int = 50) -> list:
+    return asyncio.run(_filters(limit))
 
-DELETE_FILTER_MUTATION = """mutation DeleteFilterPreset($id: ID!) {
-  deleteFilterPreset(id: $id) { deletedId }
-}"""
 
+def create_filter(name: str, httpql: str) -> dict:
+    return asyncio.run(_create_filter(name=name, httpql=httpql))
 
-# ─── Environments ────────────────────────────────────────────────────────────
 
-ENVIRONMENTS_QUERY = """fragment EnvironmentFull on Environment { id name variables { name value kind } version }
-query Environments { environments { ...EnvironmentFull } }"""
+def delete_filter(filter_id: str) -> dict:
+    return asyncio.run(_delete_filter(filter_id))
 
-CREATE_ENVIRONMENT_MUTATION = """mutation CreateEnvironment($input: CreateEnvironmentInput!) {
-  createEnvironment(input: $input) {
-    error { __typename ... on NameTakenUserError { message } ... on PermissionDeniedUserError { message } ... on OtherUserError { message } }
-    environment { id name variables { name value kind } version }
-  }
-}"""
 
-DELETE_ENVIRONMENT_MUTATION = """mutation DeleteEnvironment($id: ID!) {
-  deleteEnvironment(id: $id) {
-    deletedId
-    error { __typename ... on UnknownIdUserError { message } ... on OtherUserError { message } }
-  }
-}"""
-
+def environments(limit: int = 50) -> list:
+    return asyncio.run(_environments(limit))
 
-# ─── Projects ────────────────────────────────────────────────────────────────
 
-PROJECTS_QUERY = """fragment ProjectFull on Project { id name path status temporary createdAt updatedAt version size readOnly }
-query Projects { projects { ...ProjectFull } }"""
+def create_environment(name: str, variables: list[dict] | None = None) -> dict:
+    return asyncio.run(_create_environment(name=name, variables=variables))
 
-CREATE_PROJECT_MUTATION = """mutation CreateProject($input: CreateProjectInput!) {
-  createProject(input: $input) {
-    error { __typename ... on NameTakenUserError { message } ... on PermissionDeniedUserError { message } ... on OtherUserError { message } }
-    project { id name path status temporary createdAt updatedAt version size readOnly }
-  }
-}"""
 
-DELETE_PROJECT_MUTATION = """mutation DeleteProject($id: ID!) {
-  deleteProject(id: $id) {
-    deletedId
-    error { __typename ... on ProjectUserError { message } ... on UnknownIdUserError { message } ... on OtherUserError { message } }
-  }
-}"""
+def delete_environment(env_id: str) -> dict:
+    return asyncio.run(_delete_environment(env_id))
 
 
-# ─── Tasks ───────────────────────────────────────────────────────────────────
+def projects(limit: int = 50) -> list:
+    return asyncio.run(_projects(limit))
 
-TASKS_QUERY = """fragment TaskMeta on Task { __typename id createdAt }
-fragment ReplayTaskMeta on ReplayTask { ...TaskMeta replayEntry { id } }
-query Tasks { tasks { ...TaskMeta ... on ReplayTask { ...ReplayTaskMeta } } }"""
 
-CANCEL_TASK_MUTATION = """mutation cancelTask($id: ID!) {
-  cancelTask(id: $id) {
-    cancelledId
-    error { __typename ... on UnknownIdUserError { message } ... on OtherUserError { message } }
-  }
-}"""
+def create_project(name: str, temporary: bool = False) -> dict:
+    return asyncio.run(_create_project(name=name, temporary=temporary))
 
 
-# ─── Hosted Files ────────────────────────────────────────────────────────────
-
-HOSTED_FILES_QUERY = """query HostedFiles { hostedFiles { id name url size } }"""
-
-
-# ─── Helpers ─────────────────────────────────────────────────────────────────
-
-def _check_error(result: dict) -> str | None:
-    """Return error message string if the mutation result has an error, else None."""
-    err = result.get("error")
-    if err:
-        typename = err.get("__typename", "")
-        msg = err.get("message", "")
-        return f"{typename}: {msg}" if typename and msg else (msg or typename or "Unknown error")
-    return None
-
-
-def _extract_deleted(result: dict, id_key: str = "deletedId") -> dict:
-    """For delete/cancel mutations: check error, return {id: ...} on success."""
-    err_msg = _check_error(result)
-    if err_msg:
-        return {"error": err_msg}
-    deleted_id = result.get(id_key)
-    if deleted_id is None:
-        return {"error": "No ID returned from delete operation"}
-    return {"id": deleted_id}
-
-
-# ─── Scopes ──────────────────────────────────────────────────────────────────
-
-async def scopes(limit=50, client=None) -> list:
-    try:
-        result = await graphql(SCOPES_QUERY)
-        return result.get("scopes", [])
-    except Exception as e:
-        return {"error": str(e)}
-
-
-async def get_scope(scope_id, client=None) -> dict:
-    try:
-        result = await graphql(GET_SCOPE_QUERY, {"id": scope_id})
-        scope = result.get("scope")
-        if scope is None:
-            return {"error": "Scope not found"}
-        return scope
-    except Exception as e:
-        return {"error": str(e)}
-
-
-async def create_scope(name, allow=None, deny=None, client=None) -> dict:
-    try:
-        input_vars = {"name": name}
-        if allow is not None:
-            input_vars["allow"] = allow
-        if deny is not None:
-            input_vars["deny"] = deny
-        result = await graphql(CREATE_SCOPE_MUTATION, {"input": input_vars})
-        payload = result.get("createScope", {})
-        err_msg = _check_error(payload)
-        if err_msg:
-            return {"error": err_msg}
-        return payload.get("scope", {"error": "No scope returned"})
-    except Exception as e:
-        return {"error": str(e)}
-
-
-async def delete_scope(scope_id, client=None) -> dict:
-    try:
-        result = await graphql(DELETE_SCOPE_MUTATION, {"id": scope_id})
-        return _extract_deleted(result.get("deleteScope", {}))
-    except Exception as e:
-        return {"error": str(e)}
-
-
-# ─── Filters ─────────────────────────────────────────────────────────────────
-
-async def filters(limit=50, client=None) -> list:
-    try:
-        result = await graphql(FILTERS_QUERY)
-        return result.get("filterPresets", [])
-    except Exception as e:
-        return {"error": str(e)}
-
-
-async def create_filter(name, httpql, client=None) -> dict:
-    try:
-        result = await graphql(CREATE_FILTER_MUTATION, {"input": {"name": name, "alias": name.lower().replace(" ", "-"), "clause": {"HTTPQL": {"code": httpql}}}})
-        payload = result.get("createFilterPreset", {})
-        err_msg = _check_error(payload)
-        if err_msg:
-            return {"error": err_msg}
-        return payload.get("filter", {"error": "No filter returned"})
-    except Exception as e:
-        return {"error": str(e)}
-
-
-async def delete_filter(filter_id, client=None) -> dict:
-    try:
-        result = await graphql(DELETE_FILTER_MUTATION, {"id": filter_id})
-        return _extract_deleted(result.get("deleteFilterPreset", {}))
-    except Exception as e:
-        return {"error": str(e)}
-
-
-# ─── Environments ────────────────────────────────────────────────────────────
-
-async def environments(limit=50, client=None) -> list:
-    try:
-        result = await graphql(ENVIRONMENTS_QUERY)
-        return result.get("environments", [])
-    except Exception as e:
-        return {"error": str(e)}
-
-
-async def create_environment(name, variables=None, client=None) -> dict:
-    try:
-        input_vars = {"name": name}
-        if variables is not None:
-            input_vars["variables"] = variables
-        result = await graphql(CREATE_ENVIRONMENT_MUTATION, {"input": input_vars})
-        payload = result.get("createEnvironment", {})
-        err_msg = _check_error(payload)
-        if err_msg:
-            return {"error": err_msg}
-        return payload.get("environment", {"error": "No environment returned"})
-    except Exception as e:
-        return {"error": str(e)}
-
-
-async def delete_environment(env_id, client=None) -> dict:
-    try:
-        result = await graphql(DELETE_ENVIRONMENT_MUTATION, {"id": env_id})
-        return _extract_deleted(result.get("deleteEnvironment", {}))
-    except Exception as e:
-        return {"error": str(e)}
-
-
-# ─── Projects ────────────────────────────────────────────────────────────────
-
-async def projects(limit=50, client=None) -> list:
-    try:
-        result = await graphql(PROJECTS_QUERY)
-        return result.get("projects", [])
-    except Exception as e:
-        return {"error": str(e)}
-
-
-async def create_project(name, temporary=False, client=None) -> dict:
-    try:
-        result = await graphql(CREATE_PROJECT_MUTATION, {"input": {"name": name, "temporary": temporary}})
-        payload = result.get("createProject", {})
-        err_msg = _check_error(payload)
-        if err_msg:
-            return {"error": err_msg}
-        return payload.get("project", {"error": "No project returned"})
-    except Exception as e:
-        return {"error": str(e)}
-
-
-async def delete_project(project_id, client=None) -> dict:
-    try:
-        result = await graphql(DELETE_PROJECT_MUTATION, {"id": project_id})
-        return _extract_deleted(result.get("deleteProject", {}))
-    except Exception as e:
-        return {"error": str(e)}
-
-
-# ─── Hosted Files ────────────────────────────────────────────────────────────
-
-async def hosted_files(limit=50, client=None) -> list:
-    try:
-        result = await graphql(HOSTED_FILES_QUERY)
-        return result.get("hostedFiles", [])
-    except Exception as e:
-        return {"error": str(e)}
-
-
-# ─── Tasks ───────────────────────────────────────────────────────────────────
-
-async def tasks(limit=50, client=None) -> list:
-    try:
-        result = await graphql(TASKS_QUERY)
-        return result.get("tasks", [])
-    except Exception as e:
-        return {"error": str(e)}
-
-
-async def cancel_task(task_id, client=None) -> dict:
-    try:
-        result = await graphql(CANCEL_TASK_MUTATION, {"id": task_id})
-        return _extract_deleted(result.get("cancelTask", {}), id_key="cancelledId")
-    except Exception as e:
-        return {"error": str(e)}
+def delete_project(project_id: str) -> dict:
+    return asyncio.run(_delete_project(project_id))
+
+
+def hosted_files(limit: int = 50) -> list:
+    return asyncio.run(_hosted_files(limit))
+
+
+def tasks(limit: int = 50) -> list:
+    return asyncio.run(_tasks(limit))
+
+
+def cancel_task(task_id: str) -> dict:
+    return asyncio.run(_cancel_task(task_id))
