@@ -148,10 +148,17 @@ def _map_node(node: dict[str, Any]) -> dict[str, Any]:
     }
 
     # Include raw bytes when fetched (includeRequestRaw/includeResponseRaw=True)
+    # Decode base64 (GraphQL Blob type)
     if node.get("raw") is not None:
-        result["requestRaw"] = node["raw"]
+        try:
+            result["requestRaw"] = base64.b64decode(node["raw"]).decode("utf-8")
+        except Exception:
+            result["requestRaw"] = node["raw"]
     if resp.get("raw") is not None:
-        result["responseRaw"] = resp["raw"]
+        try:
+            result["responseRaw"] = base64.b64decode(resp["raw"]).decode("utf-8")
+        except Exception:
+            result["responseRaw"] = resp["raw"]
 
     return result
 
