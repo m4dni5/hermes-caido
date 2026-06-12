@@ -48,7 +48,7 @@ def register(ctx) -> None:  # noqa: ANN001 — plugin context type
 
     # Bundle skills
     skills_dir = Path(__file__).parent / "skills"
-    for skill_name in ("replay", "utils"):
+    for skill_name in ("replay", "utils", "automate"):
         skill_path = skills_dir / skill_name / "SKILL.md"
         if skill_path.exists():
             ctx.register_skill(skill_name, skill_path)
@@ -56,4 +56,4 @@ def register(ctx) -> None:  # noqa: ANN001 — plugin context type
         else:
             logger.warning("Skill file not found: %s", skill_path)
 
-    logger.info("Caido plugin loaded — %d tools, 2 skills", len(_tools))
+    logger.info("Caido plugin loaded — %d tools, 3 skills", len(_tools))

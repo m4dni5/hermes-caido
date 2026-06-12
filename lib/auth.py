@@ -7,7 +7,7 @@ Usage:
 """
 
 from __future__ import annotations
-import asyncio
+from sync import sync_run
 from graphql.auth import (
     auth_status as _auth_status,
     clear_cache as _clear_cache,
@@ -18,19 +18,19 @@ from graphql.auth import (
 
 def auth_status() -> dict:
     """Check current auth state."""
-    return asyncio.run(_auth_status())
+    return sync_run(_auth_status)
 
 
 def clear_cache() -> dict:
     """Clear cached tokens and force re-auth."""
-    return asyncio.run(_clear_cache())
+    return sync_run(_clear_cache)
 
 
 def test_connection() -> dict:
     """Test Caido connectivity and auth."""
-    return asyncio.run(_test_connection())
+    return sync_run(_test_connection)
 
 
 def setup(pat: str | None = None, url: str | None = None) -> dict:
     """Configure credentials."""
-    return asyncio.run(_setup(pat=pat, url=url))
+    return sync_run(_setup, pat=pat, url=url)

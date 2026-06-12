@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 from .client import (
-    _HERMES_ENV, _CLAUDE_SECRETS, _TOKEN_CACHE,
+    _HERMES_ENV, _CLAUDE_SECRETS, _HERMES_CACHE,
     _resolve_pat, _resolve_url, _load_cached_token,
     _save_cached_token, _do_device_flow,
     graphql, health,
@@ -78,7 +78,7 @@ async def auth_status() -> dict:
 
     # Check token cache
     from datetime import datetime, timezone
-    for cache_path in [_TOKEN_CACHE, _CLAUDE_SECRETS]:
+    for cache_path in [_HERMES_CACHE, _CLAUDE_SECRETS]:
         if not cache_path.is_file():
             continue
         try:
@@ -129,9 +129,9 @@ async def clear_cache() -> dict:
     await close_client()
 
     # Clear token cache
-    if _TOKEN_CACHE.is_file():
-        _TOKEN_CACHE.unlink()
-        cleared.append(str(_TOKEN_CACHE))
+    if _HERMES_CACHE.is_file():
+        _HERMES_CACHE.unlink()
+        cleared.append(str(_HERMES_CACHE))
 
     # Clear cached token from secrets.json
     if _CLAUDE_SECRETS.is_file():

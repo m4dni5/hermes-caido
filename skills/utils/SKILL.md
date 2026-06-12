@@ -16,18 +16,18 @@ Load this skill when you need to:
 
 **For common operations, use the plugin tools directly** — `caido_search`, `caido_get`, `caido_findings`, `caido_create_finding`, `caido_health`, `caido_setup`.
 
-## Import Pattern
+## How to Use
+
+Use `execute_code` (not `terminal`) to call these functions. The agent imports and calls them directly — no shell subprocess needed.
 
 ```python
+# In an execute_code script:
 import sys
-sys.path.insert(0, "/home/matt/src/hermes-caido/lib")
-
+sys.path.insert(0, "/home/matt/.hermes/plugins/caido/lib")
 import http_requests
 import findings
 import management
 ```
-
-All functions are synchronous — just call them directly.
 
 ## Export Curl
 

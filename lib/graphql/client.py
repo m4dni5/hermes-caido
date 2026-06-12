@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 # ── paths ──────────────────────────────────────────────────────────────
 
 _HERMES_ENV = Path.home() / ".hermes" / ".env"
+_HERMES_CACHE = Path.home() / ".hermes" / "cache" / "caido-token.json"
 _CLAUDE_SECRETS = Path.home() / ".claude" / "config" / "secrets.json"
-_TOKEN_CACHE = Path.home() / ".config" / "caido-py" / "secrets.json"
 _CLOUD_API = "https://api.caido.io"
 
 # ── singleton state ────────────────────────────────────────────────────
@@ -146,7 +146,7 @@ def _load_cached_token() -> bool:
     """Load cached token. Returns True if valid and not expired."""
     global _access_token, _refresh_token, _expires_at
 
-    for cache_path in [_TOKEN_CACHE, _CLAUDE_SECRETS]:
+    for cache_path in [_HERMES_CACHE, _CLAUDE_SECRETS]:
         if not cache_path.is_file():
             continue
         try:
@@ -171,7 +171,7 @@ def _load_cached_token() -> bool:
 
 def _save_cached_token() -> None:
     """Persist token to cache."""
-    _TOKEN_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    _HERMES_CACHE.parent.mkdir(parents=True, exist_ok=True)
     data: dict[str, Any] = {}
     if _access_token:
         data["accessToken"] = _access_token
@@ -179,7 +179,7 @@ def _save_cached_token() -> None:
         data["refreshToken"] = _refresh_token
     if _expires_at:
         data["expiresAt"] = _expires_at.isoformat()
-    _TOKEN_CACHE.write_text(json.dumps(data, indent=2))
+    _HERMES_CACHE.write_text(json.dumps(data, indent=2))
 
 
 # ── OAuth2 device code flow (via GraphQL + websocket) ─────────────────
@@ -197,13 +197,40 @@ async def _gql_raw(url: str, query: str, variables: dict | None = None) -> dict[
             return data.get("data", {})
 
 
+async def _get_device_information(pat: str, user_code: str) -> list[str]:
+    """Fetch available scopes for a device code from caido.io."""
+    info_url = f"{_CLOUD_API}/oauth2/device/information"
+    params = urlencode({"user_code": user_code})
+    async with aiohttp.ClientSession() as s:
+        async with s.get(
+            f"{info_url}?{params}",
+            headers={
+                "Authorization": f"Bearer {pat}",
+                "Accept": "application/json",
+            },
+        ) as resp:
+            if resp.status < 200 or resp.status >= 300:
+                body = await resp.text()
+                raise RuntimeError(f"Device info failed ({resp.status}): {body[:300]}")
+            data = await resp.json()
+            scopes = [scope["name"] for scope in data.get("scopes", [])]
+            if not scopes:
+                raise RuntimeError(f"No scopes returned from device info: {data}")
+            return scopes
+
+
 async def _approve_via_cloud(pat: str, user_code: str) -> None:
     """Approve device code via caido.io using PAT."""
+    # Step 1: Get available scopes from device information
+    scopes = await _get_device_information(pat, user_code)
+    logger.info("Caido auth: approving scopes %s", scopes)
+
+    # Step 2: Approve with the fetched scopes
     approve_url = f"{_CLOUD_API}/oauth2/device/approve"
-    query = urlencode({"user_code": user_code, "scope": "read,write"})
+    params = urlencode({"user_code": user_code, "scope": ",".join(scopes)})
     async with aiohttp.ClientSession() as s:
         async with s.post(
-            f"{approve_url}?{query}",
+            f"{approve_url}?{params}",
             headers={
                 "Authorization": f"Bearer {pat}",
                 "Accept": "application/json",

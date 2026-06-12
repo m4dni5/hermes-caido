@@ -7,7 +7,7 @@ Usage:
 """
 
 from __future__ import annotations
-import asyncio
+from sync import sync_run
 from graphql.findings import (
     list_findings as _list_findings,
     get_finding as _get_finding,
@@ -18,12 +18,12 @@ from graphql.findings import (
 
 def list_findings(query: str | None = None, limit: int = 50) -> dict:
     """List findings. Optional title filter."""
-    return asyncio.run(_list_findings(query=query, limit=limit))
+    return sync_run(_list_findings, query=query, limit=limit)
 
 
 def get_finding(finding_id: str) -> dict:
     """Get a finding by ID."""
-    return asyncio.run(_get_finding(finding_id=finding_id))
+    return sync_run(_get_finding, finding_id=finding_id)
 
 
 def create_finding(
@@ -33,7 +33,7 @@ def create_finding(
     request_id: str | None = None,
 ) -> dict:
     """Create a finding."""
-    return asyncio.run(_create_finding(title=title, description=description, severity=severity, request_id=request_id))
+    return sync_run(_create_finding, title=title, description=description, severity=severity, request_id=request_id)
 
 
 def update_finding(
@@ -43,4 +43,4 @@ def update_finding(
     severity: str | None = None,
 ) -> dict:
     """Update a finding."""
-    return asyncio.run(_update_finding(finding_id=finding_id, title=title, description=description, severity=severity))
+    return sync_run(_update_finding, finding_id=finding_id, title=title, description=description, severity=severity)

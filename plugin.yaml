@@ -1,5 +1,5 @@
 name: caido
-version: 0.3.0
+version: 0.4.0
 description: Caido HTTP proxy integration — search requests, manage findings. Replay and advanced operations via bundled skills.
 author: matt
 provides_tools:
@@ -13,6 +13,7 @@ provides_tools:
 provides_skills:
   - replay
   - utils
+  - automate
 requires_env:
   - name: CAIDO_PAT
     description: "Caido Personal Access Token"

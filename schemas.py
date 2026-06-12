@@ -7,9 +7,10 @@ the corresponding tool.  All tools return JSON strings.
 CAIDO_SEARCH = {
     "name": "caido_search",
     "description": (
-        "Search intercepted HTTP requests in the Caido proxy history using "
-        "HTTPQL queries.  Use this to find requests matching specific criteria "
-        "such as path substrings, methods, hosts, headers, status codes, etc.  "
+        "Search the Caido **proxy history** — the log of all HTTP traffic that "
+        "passed through the proxy — using HTTPQL queries.  Use this to find "
+        "requests matching specific criteria such as path substrings, methods, "
+        "hosts, headers, status codes, etc.  "
         "Examples: 'req.path.cont:\"/api/\"', 'req.method = \"POST\"', "
         "'req.host = \"example.com\"', 'resp.status >= 400'."
     ),
@@ -46,9 +47,9 @@ CAIDO_SEARCH = {
 CAIDO_RECENT = {
     "name": "caido_recent",
     "description": (
-        "Get the most recent HTTP requests intercepted by the Caido proxy.  "
+        "Get the most recent HTTP requests from the Caido **proxy history**.  "
         "This is a shortcut for searching sorted by time descending.  Use when "
-        "you want to see what traffic has been captured recently."
+        "you want to see what traffic the proxy has captured recently."
     ),
     "parameters": {
         "type": "object",
@@ -76,9 +77,11 @@ CAIDO_RECENT = {
 CAIDO_GET = {
     "name": "caido_get",
     "description": (
-        "Retrieve a specific HTTP request and its response from the Caido proxy "
-        "by request ID.  Use this to inspect a particular request/response pair "
-        "in full detail, for example after finding it via caido_search."
+        "Retrieve a specific HTTP request and its response from the Caido "
+        "**proxy history** — the log of all traffic that passed through the proxy.  "
+        "Use this to inspect a request/response pair after finding it via "
+        "caido_search or caido_recent.  For replay requests, use the replay skill.  "
+        "For automate (fuzzer) requests, use the automate skill."
     ),
     "parameters": {
         "type": "object",

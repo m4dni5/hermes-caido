@@ -25,7 +25,6 @@ CREATE_SCOPE_MUTATION = """mutation CreateScope($input: CreateScopeInput!) {
 DELETE_SCOPE_MUTATION = """mutation DeleteScope($id: ID!) {
   deleteScope(id: $id) {
     deletedId
-    error { __typename ... on UnknownIdUserError { message } ... on OtherUserError { message } }
   }
 }"""
 
@@ -102,7 +101,7 @@ CANCEL_TASK_MUTATION = """mutation cancelTask($id: ID!) {
 
 # ─── Hosted Files ────────────────────────────────────────────────────────────
 
-HOSTED_FILES_QUERY = """query HostedFiles { hostedFiles { id name url size } }"""
+HOSTED_FILES_QUERY = """query HostedFiles { hostedFiles { id name path size status createdAt updatedAt } }"""
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -151,11 +150,7 @@ async def get_scope(scope_id, client=None) -> dict:
 
 async def create_scope(name, allow=None, deny=None, client=None) -> dict:
     try:
-        input_vars = {"name": name}
-        if allow is not None:
-            input_vars["allow"] = allow
-        if deny is not None:
-            input_vars["deny"] = deny
+        input_vars = {"name": name, "allowlist": allow or [], "denylist": deny or []}
         result = await graphql(CREATE_SCOPE_MUTATION, {"input": input_vars})
         payload = result.get("createScope", {})
         err_msg = _check_error(payload)
@@ -186,7 +181,7 @@ async def filters(limit=50, client=None) -> list:
 
 async def create_filter(name, httpql, client=None) -> dict:
     try:
-        result = await graphql(CREATE_FILTER_MUTATION, {"input": {"name": name, "alias": name.lower().replace(" ", "-"), "clause": {"HTTPQL": {"code": httpql}}}})
+        result = await graphql(CREATE_FILTER_MUTATION, {"input": {"name": name, "alias": name.lower().replace(" ", "-"), "clause": {"HTTPQL": {"code": httpql}}, "global": False}})
         payload = result.get("createFilterPreset", {})
         err_msg = _check_error(payload)
         if err_msg:

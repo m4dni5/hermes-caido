@@ -7,7 +7,7 @@ Usage:
 """
 
 from __future__ import annotations
-import asyncio
+from sync import sync_run
 from graphql.management import (
     scopes as _scopes,
     get_scope as _get_scope,
@@ -29,64 +29,64 @@ from graphql.management import (
 
 
 def scopes(limit: int = 50) -> list:
-    return asyncio.run(_scopes(limit))
+    return sync_run(_scopes, limit)
 
 
 def get_scope(scope_id: str) -> dict:
-    return asyncio.run(_get_scope(scope_id))
+    return sync_run(_get_scope, scope_id)
 
 
 def create_scope(name: str, allow: list[str] | None = None, deny: list[str] | None = None) -> dict:
-    return asyncio.run(_create_scope(name=name, allow=allow, deny=deny))
+    return sync_run(_create_scope, name=name, allow=allow, deny=deny)
 
 
 def delete_scope(scope_id: str) -> dict:
-    return asyncio.run(_delete_scope(scope_id))
+    return sync_run(_delete_scope, scope_id)
 
 
 def filters(limit: int = 50) -> list:
-    return asyncio.run(_filters(limit))
+    return sync_run(_filters, limit)
 
 
 def create_filter(name: str, httpql: str) -> dict:
-    return asyncio.run(_create_filter(name=name, httpql=httpql))
+    return sync_run(_create_filter, name=name, httpql=httpql)
 
 
 def delete_filter(filter_id: str) -> dict:
-    return asyncio.run(_delete_filter(filter_id))
+    return sync_run(_delete_filter, filter_id)
 
 
 def environments(limit: int = 50) -> list:
-    return asyncio.run(_environments(limit))
+    return sync_run(_environments, limit)
 
 
 def create_environment(name: str, variables: list[dict] | None = None) -> dict:
-    return asyncio.run(_create_environment(name=name, variables=variables))
+    return sync_run(_create_environment, name=name, variables=variables)
 
 
 def delete_environment(env_id: str) -> dict:
-    return asyncio.run(_delete_environment(env_id))
+    return sync_run(_delete_environment, env_id)
 
 
 def projects(limit: int = 50) -> list:
-    return asyncio.run(_projects(limit))
+    return sync_run(_projects, limit)
 
 
 def create_project(name: str, temporary: bool = False) -> dict:
-    return asyncio.run(_create_project(name=name, temporary=temporary))
+    return sync_run(_create_project, name=name, temporary=temporary)
 
 
 def delete_project(project_id: str) -> dict:
-    return asyncio.run(_delete_project(project_id))
+    return sync_run(_delete_project, project_id)
 
 
 def hosted_files(limit: int = 50) -> list:
-    return asyncio.run(_hosted_files(limit))
+    return sync_run(_hosted_files, limit)
 
 
 def tasks(limit: int = 50) -> list:
-    return asyncio.run(_tasks(limit))
+    return sync_run(_tasks, limit)
 
 
 def cancel_task(task_id: str) -> dict:
-    return asyncio.run(_cancel_task(task_id))
+    return sync_run(_cancel_task, task_id)
