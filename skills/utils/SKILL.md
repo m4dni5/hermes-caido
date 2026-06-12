@@ -22,8 +22,9 @@ Use `execute_code` (not `terminal`) to call these functions. The agent imports a
 
 ```python
 # In an execute_code script:
+from pathlib import Path
 import sys
-sys.path.insert(0, "/home/matt/.hermes/plugins/caido/lib")
+sys.path.insert(0, str(Path.home() / ".hermes" / "plugins" / "caido" / "lib"))
 import http_requests
 import findings
 import management
