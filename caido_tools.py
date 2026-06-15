@@ -165,9 +165,21 @@ async def handle_create_finding(args: dict, **kwargs) -> str:
 async def handle_health(args: dict, **kwargs) -> str:
     try:
         result = await health()
+        if result.get("status") != "ok":
+            result["message"] = (
+                "Caido instance is not healthy. Check that it is running. "
+                "Load the caido:utils skill and run auth.setup() if this is an auth issue."
+            )
         return json.dumps(result, indent=2)
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return json.dumps({
+            "status": "error",
+            "error": str(e),
+            "message": (
+                "Health check failed. Load the caido:utils skill and run auth.setup() "
+                "to configure credentials, or check that the Caido instance is running."
+            ),
+        }, indent=2)
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +216,10 @@ async def handle_onboard(args: dict, **kwargs) -> str:
         if not health_ok:
             return json.dumps({
                 "health": {"status": "unreachable"},
-                "message": "Cannot reach Caido instance. Check connection and load caido:utils skill for auth setup.",
+                "message": (
+                    "Cannot reach Caido instance. Check that it is running and the URL is correct. "
+                    "Load the caido:utils skill and run auth.setup() to configure credentials."
+                ),
             }, indent=2)
 
         # Layer 2: Auth check — try a simple query
@@ -221,7 +236,11 @@ async def handle_onboard(args: dict, **kwargs) -> str:
             return json.dumps({
                 "health": {"status": "ok"},
                 "auth": {"authenticated": False, "error": auth_error},
-                "message": "Not authenticated. Load caido:utils and run setup.",
+                "message": (
+                    "Not authenticated. Load the caido:utils skill and run auth.setup() "
+                    "to configure credentials. If your Caido instance is local "
+                    "(127.0.0.1:8080), no PAT is needed — the plugin connects as guest automatically."
+                ),
             }, indent=2)
 
         # Layer 3: Parse results
@@ -300,4 +319,11 @@ async def handle_onboard(args: dict, **kwargs) -> str:
         }, indent=2)
 
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        error_str = str(e)
+        result = {"error": error_str}
+        if any(kw in error_str.lower() for kw in ["auth", "token", "pat", "401", "403", "forbidden"]):
+            result["message"] = (
+                "Load the caido:utils skill and run auth.setup() to configure credentials. "
+                "If your Caido instance is local (127.0.0.1:8080), no PAT is needed."
+            )
+        return json.dumps(result, indent=2)

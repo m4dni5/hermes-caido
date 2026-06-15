@@ -19,7 +19,9 @@ CAIDO_ONBOARD = {
         "Connect to Caido and gather full context in one call. Returns health, "
         "auth status, active project, scopes, intercept config, recent traffic "
         "summary, findings count, and available hosted files. Use this at the "
-        "start of any Caido session to orient yourself."
+        "start of any Caido session to orient yourself. "
+        "If auth fails, load the caido:utils skill and run auth.setup(). "
+        "Local instances (127.0.0.1:8080) connect as guest — no PAT needed."
     ),
     "parameters": {
         "type": "object",
@@ -194,7 +196,8 @@ CAIDO_HEALTH = {
     "name": "caido_health",
     "description": (
         "Check the health and version of the connected Caido instance.  "
-        "Use this to verify connectivity and confirm the Caido version."
+        "Use this to verify connectivity and confirm the Caido version. "
+        "If the check fails, load the caido:utils skill and run auth.setup()."
     ),
     "parameters": {
         "type": "object",

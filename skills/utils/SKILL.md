@@ -8,7 +8,9 @@ tags: [worker, offensive]
 
 ## When to Use This Skill
 
-Load this skill when you need to:
+**Load this skill when any Caido tool returns an authentication error.** Run `auth.setup()` to configure credentials.
+
+Also load when you need to:
 - Set up or troubleshoot Caido authentication (fresh install, token issues)
 - Get finding details or update a finding
 - Export requests as curl commands
@@ -34,6 +36,8 @@ import auth
 ## Authentication Setup
 
 For fresh installs or token issues. The `caido_onboard` tool handles the happy path automatically.
+
+**Local instances (127.0.0.1:8080) connect as guest** — no PAT needed. The plugin detects local URLs and skips authentication automatically. You only need auth setup for remote/cloud Caido instances.
 
 ```python
 import auth

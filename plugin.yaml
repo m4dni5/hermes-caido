@@ -16,7 +16,8 @@ provides_skills:
   - automate
 requires_env:
   - name: CAIDO_PAT
-    description: "Caido Personal Access Token"
+    description: "Caido Personal Access Token (not needed for local instances at 127.0.0.1:8080)"
     secret: true
+    optional: true
   - name: CAIDO_URL
-    description: "Caido instance URL (e.g. https://caido.example.com)"
+    description: "Caido instance URL (e.g. https://caido.example.com or http://127.0.0.1:8080)"

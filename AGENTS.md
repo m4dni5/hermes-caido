@@ -52,6 +52,12 @@ Tools are for high-frequency, single-call operations (search, get, recent). Ever
 ### Auth runs in a subprocess
 The Hermes agent's async context interferes with aiohttp WebSocket connections (inherited SSL state, nested event loops). The auth flow runs in `auth_helper.py` as a fresh process. The `caido_onboard` tool handles the happy path; auth setup/troubleshooting lives in the `caido:utils` skill.
 
+### Local instances connect as guest
+When the Caido URL is local (`127.0.0.1:8080`, `localhost:8080`, `[::1]:8080`), the plugin skips authentication entirely and connects without an Authorization header. No PAT is required. This is detected automatically in `_is_local_url()` — if the URL resolves to a loopback address on port 8080, `_ensure_auth()` returns `(url, None)` and the session is created without auth headers.
+
+### Auth error guidance
+All error paths in tool handlers and the client layer include explicit guidance: **"Load the caido:utils skill and run auth.setup()"**. The agent should follow this instruction whenever a Caido tool returns an auth-related error.
+
 ### No external SDK dependency (for now)
 We use raw GraphQL strings against Caido's v0.57.0 schema. The official Python SDK (`caido-sdk-client`) is on 0.56.0 and lacks automate support. When the SDK catches up, we'll swap the GraphQL layer. The skill interface is the stable contract.
 
@@ -115,7 +121,7 @@ python3 -m py_compile caido_tools.py
 - **Plugin path:** `CAIDO_PLUGIN_DIR` env var (set automatically during registration, works under any profile)
 - **Hermes home:** `HERMES_HOME` env var if set (profile-aware), otherwise `~/.hermes/`
 - **Token cache:** `<hermes_home>/cache/caido-token.json`
-- **Caido URL/PAT:** `<hermes_home>/.env` or env vars `CAIDO_URL` / `CAIDO_PAT`
+- **Caido URL/PAT:** `<hermes_home>/.env` or env vars `CAIDO_URL` / `CAIDO_PAT` (PAT not needed for local instances at `127.0.0.1:8080`)
 - **Python executable:** `sys.executable` (same Python running the plugin)
 - **Caido schema version:** 0.57.0
 
