@@ -25,9 +25,8 @@ Use `execute_code` (not `terminal`) to call these functions. The agent imports a
 
 ```python
 # In an execute_code script:
-from pathlib import Path
-import sys
-sys.path.insert(0, str(Path.home() / ".hermes" / "plugins" / "caido" / "lib"))
+import os, sys
+sys.path.insert(0, os.path.join(os.environ["CAIDO_PLUGIN_DIR"], "lib"))
 import automate
 ```
 
@@ -182,20 +181,19 @@ payloads.add_prefix(p, "Bearer ")    # → "Bearer test"
 payloads.add_suffix(p, "@example.com")  # → "test@example.com"
 ```
 
-## Session Configuration (Phase 2 — coming soon)
+## Session Configuration
 
-Set payloads, strategy, concurrency, extractors via `automate.update_session()`.
+Set payloads, strategy, concurrency, extractors via `automate.update_session()`. See the Placeholders and Payloads sections above for the full workflow.
 
-## Result Retrieval (Phase 4 — coming soon)
+## Result Retrieval (coming soon)
 
 Retrieve and filter fuzzing results with HTTPQL, sort by status/length/roundtrip.
 
 ## Quick-Start Workflow
 
 ```python
-import sys, base64
-from pathlib import Path
-sys.path.insert(0, str(Path.home() / ".hermes" / "plugins" / "caido" / "lib"))
+import os, sys, base64
+sys.path.insert(0, os.path.join(os.environ["CAIDO_PLUGIN_DIR"], "lib"))
 import automate
 import placeholders
 

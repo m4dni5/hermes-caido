@@ -45,8 +45,8 @@ async def _setup_via_subprocess(pat: str | None = None, url: str | None = None) 
     if not helper.exists():
         return {"error": f"Auth helper not found: {helper}"}
 
-    # Find the Python with aiohttp installed
-    venv_python = str(_Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "python3")
+    # Find the Python with aiohttp installed — same one running this plugin
+    venv_python = sys.executable
 
     try:
         proc = await asyncio.get_event_loop().run_in_executor(
@@ -182,7 +182,9 @@ async def handle_setup(args: dict, **kwargs) -> str:
         elif action == "clear":
             # File-based clear — no async needed
             cleared = []
-            cache = _Path.home() / ".hermes" / "cache" / "caido-token.json"
+            import os
+            hermes_home = os.environ.get("HERMES_HOME") or str(_Path.home() / ".hermes")
+            cache = _Path(hermes_home) / "cache" / "caido-token.json"
             if cache.exists():
                 cache.unlink()
                 cleared.append(str(cache))

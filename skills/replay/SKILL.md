@@ -43,9 +43,8 @@ Use `execute_code` (not `terminal`) to call these functions. The agent imports a
 
 ```python
 # In an execute_code script:
-from pathlib import Path
-import sys
-sys.path.insert(0, str(Path.home() / ".hermes" / "plugins" / "caido" / "lib"))
+import os, sys
+sys.path.insert(0, os.path.join(os.environ["CAIDO_PLUGIN_DIR"], "lib"))
 import replay
 ```
 

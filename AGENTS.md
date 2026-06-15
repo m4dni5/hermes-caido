@@ -102,12 +102,18 @@ python3 -m py_compile caido_tools.py
 
 ## Environment
 
-- **Plugin path (dev):** `~/hermes-caido`
-- **Plugin path (installed):** `~/.hermes/plugins/caido`
-- **Hermes venv:** `~/.hermes/hermes-agent/venv/` (has `aiohttp`)
-- **Token cache:** `~/.hermes/cache/caido-token.json`
-- **Caido URL/PAT:** `~/.hermes/.env` or env vars `CAIDO_URL` / `CAIDO_PAT`
+- **Plugin path:** `CAIDO_PLUGIN_DIR` env var (set automatically during registration, works under any profile)
+- **Hermes home:** `HERMES_HOME` env var if set (profile-aware), otherwise `~/.hermes/`
+- **Token cache:** `<hermes_home>/cache/caido-token.json`
+- **Caido URL/PAT:** `<hermes_home>/.env` or env vars `CAIDO_URL` / `CAIDO_PAT`
+- **Python executable:** `sys.executable` (same Python running the plugin)
 - **Caido schema version:** 0.57.0 (reference: `lib/graphql/schema.graphql`)
+
+Skills import the library via:
+```python
+import os, sys
+sys.path.insert(0, os.path.join(os.environ["CAIDO_PLUGIN_DIR"], "lib"))
+```
 
 ## Future Work
 

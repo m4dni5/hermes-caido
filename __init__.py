@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 
 def register(ctx) -> None:  # noqa: ANN001 — plugin context type
     """Register hot-path Caido tools with the Hermes tool registry."""
+    # Expose plugin path for skills and auth helper — works under any profile
+    import os
+    plugin_path = ctx.manifest.path or str(Path(__file__).parent)
+    os.environ["CAIDO_PLUGIN_DIR"] = plugin_path
+
     _tools = [
         # Hot path — always available, schema-guided
         ("caido_onboard",        schemas.CAIDO_ONBOARD,        tools.handle_onboard,        "Connect and gather full Caido context"),

@@ -27,8 +27,16 @@ logger = logging.getLogger(__name__)
 
 # ── paths ──────────────────────────────────────────────────────────────
 
-_HERMES_ENV = Path.home() / ".hermes" / ".env"
-_HERMES_CACHE = Path.home() / ".hermes" / "cache" / "caido-token.json"
+def _hermes_home() -> Path:
+    """Return Hermes home — respects HERMES_HOME env var (profile-aware)."""
+    import os
+    override = os.environ.get("HERMES_HOME")
+    if override:
+        return Path(override)
+    return Path.home() / ".hermes"
+
+_HERMES_ENV = _hermes_home() / ".env"
+_HERMES_CACHE = _hermes_home() / "cache" / "caido-token.json"
 _CLAUDE_SECRETS = Path.home() / ".claude" / "config" / "secrets.json"
 _CLOUD_API = "https://api.caido.io"
 
