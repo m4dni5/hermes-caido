@@ -3,7 +3,7 @@
 ## Packaging & Dependencies
 
 - [ ] Add `pyproject.toml` with `aiohttp` as a declared dependency
-- [ ] Replace hardcoded `~/.hermes/hermes-agent/venv/bin/python3` in `auth_helper.py` with `sys.executable`
+- [x] ~~Replace hardcoded venv path in `auth_helper.py`~~ — now uses `sys.executable`
 - [ ] Install plugin into Hermes venv via `pip install -e .` (editable)
 - [ ] Skills import via `import automate` — no `sys.path.insert` needed
 
@@ -19,11 +19,9 @@
 - [ ] Phase 4: Result retrieval — `get_entry_requests()` with HTTPQL filter and ordering
 - [ ] Phase 5: Bundle common fuzzing patterns into `caido:automate` skill (IDOR, parameter fuzzing, auth bypass, rate limiting)
 
-## Intercept Skill
-
-- [ ] `caido:intercept` — intercept toggle, scope management, rule editing
-
 ## Known Issues
 
-- [ ] `caido_onboard` / `caido_health` — event loop conflicts when called from Hermes agent's async context (auth helper subprocess workaround works, but root cause is inherited aiohttp state)
-- [ ] `search()` / `recent()` — no automatic scope filtering (Caido doesn't expose "active scope for proxy history" via GraphQL; only intercept scope is available)
+- [x] ~~Hardcoded paths break under Hermes profiles~~ — fixed via `CAIDO_PLUGIN_DIR`, `HERMES_HOME`, `sys.executable`
+- [x] ~~`search()` / `recent()` no scope filtering~~ — fixed via active scope state set by `caido_onboard`
+- [x] ~~`findings { id }` in onboard query~~ — fixed to `findings { count { value } }`
+- [ ] Event loop conflicts in `caido_onboard` / `caido_health` — auth helper subprocess workaround works, but health/graphql calls still run inside agent's event loop

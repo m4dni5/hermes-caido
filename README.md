@@ -23,7 +23,6 @@ Hermes Agent plugin for the [Caido](https://caido.io) HTTP proxy. Search history
 | `caido:replay` | Session management, edit-and-replay, curl-through-proxy guidance |
 | `caido:utils` | Auth setup, findings CRUD, export curl, scopes, filters, environments, projects |
 | `caido:automate` | Automate (fuzzer) — session CRUD, FUZZ slot placeholders, payloads, task control |
-| `caido:intercept` | Work in progress |
 
 ## Installation
 

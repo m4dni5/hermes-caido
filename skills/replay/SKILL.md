@@ -33,7 +33,7 @@ This ensures:
 - Findings can be linked to specific requests
 - The full request/response is logged for later analysis
 
-The proxy URL is the same as `CAIDO_URL` (the Caido instance URL). If the agent doesn't know the proxy URL, it can check with `caido_setup` (action: status) or read from `CAIDO_URL` in `~/.hermes/.env`.
+The proxy URL is the same as `CAIDO_URL` (the Caido instance URL). If the agent doesn't know the proxy URL, it can check with `caido_onboard` or read from `CAIDO_URL` in the Hermes env file.
 
 **Without the proxy flag, curl traffic is invisible to Caido.**
 

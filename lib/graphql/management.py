@@ -3,9 +3,6 @@ Caido management operations via raw GraphQL.
 Uses the real Caido GraphQL schema (error unions with __typename).
 """
 
-import sys
-from pathlib import Path
-
 from .client import graphql
 
 

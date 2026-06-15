@@ -19,14 +19,13 @@ from graphql.management import (
     projects, create_project, delete_project,
     hosted_files, tasks, cancel_task,
 )
-from graphql.auth import auth_status, clear_cache, test_connection, setup
+from graphql.auth import setup as _auth_setup
 from graphql.client import health, graphql
 from output import format_entry_compact, format_response
 
 import asyncio
-import json as _json
+import os
 import subprocess as _subprocess
-from pathlib import Path as _Path
 
 
 async def _setup_via_subprocess(pat: str | None = None, url: str | None = None) -> dict:
@@ -39,8 +38,8 @@ async def _setup_via_subprocess(pat: str | None = None, url: str | None = None) 
     if not pat or not url:
         return {"error": "PAT and URL are required for setup"}
 
-    plugin_dir = str(_Path(__file__).parent)
-    helper = _Path(__file__).parent / "auth_helper.py"
+    plugin_dir = str(Path(__file__).parent)
+    helper = Path(__file__).parent / "auth_helper.py"
 
     if not helper.exists():
         return {"error": f"Auth helper not found: {helper}"}
@@ -67,17 +66,16 @@ async def _setup_via_subprocess(pat: str | None = None, url: str | None = None) 
     if proc.returncode != 0:
         # Try to parse JSON error from stdout
         try:
-            return _json.loads(proc.stdout.strip())
+            return json.loads(proc.stdout.strip())
         except Exception:
             return {"error": f"Auth helper failed (exit {proc.returncode}): {proc.stderr[:500]}"}
 
     try:
-        result = _json.loads(proc.stdout.strip())
+        result = json.loads(proc.stdout.strip())
     except Exception:
         return {"error": f"Auth helper returned invalid JSON: {proc.stdout[:200]}"}
 
     # Reload the cached token into the running process
-    import os
     from graphql.client import _load_cached_token
     os.environ["CAIDO_PAT"] = pat
     os.environ["CAIDO_URL"] = url
@@ -172,46 +170,6 @@ async def handle_health(args: dict, **kwargs) -> str:
         return json.dumps({"error": str(e)})
 
 
-async def handle_setup(args: dict, **kwargs) -> str:
-    try:
-        action = args.get("action", "status")
-        if action == "status":
-            result = await auth_status()
-        elif action == "test":
-            result = await test_connection()
-        elif action == "clear":
-            # File-based clear — no async needed
-            cleared = []
-            import os
-            hermes_home = os.environ.get("HERMES_HOME") or str(_Path.home() / ".hermes")
-            cache = _Path(hermes_home) / "cache" / "caido-token.json"
-            if cache.exists():
-                cache.unlink()
-                cleared.append(str(cache))
-            secrets = _Path.home() / ".claude" / "config" / "secrets.json"
-            if secrets.exists():
-                try:
-                    import json as _j
-                    data = _j.loads(secrets.read_text())
-                    if "caido" in data and "cachedToken" in data["caido"]:
-                        del data["caido"]["cachedToken"]
-                        secrets.write_text(_j.dumps(data, indent=2))
-                        cleared.append(f"{secrets} (cachedToken)")
-                except Exception:
-                    pass
-            result = {"cleared": cleared, "message": "Cache cleared. Next call will trigger fresh auth."}
-        elif action == "setup":
-            result = await _setup_via_subprocess(
-                pat=args.get("pat"),
-                url=args.get("url"),
-            )
-        else:
-            result = {"error": f"Unknown action: {action}"}
-        return json.dumps(result, indent=2)
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-
-
 # ---------------------------------------------------------------------------
 # Onboard handler — full context in one call
 # ---------------------------------------------------------------------------
@@ -246,7 +204,7 @@ async def handle_onboard(args: dict, **kwargs) -> str:
         if not health_ok:
             return json.dumps({
                 "health": {"status": "unreachable"},
-                "message": "Cannot reach Caido instance. Check connection and run caido_setup.",
+                "message": "Cannot reach Caido instance. Check connection and load caido:utils skill for auth setup.",
             }, indent=2)
 
         # Layer 2: Auth check — try a simple query

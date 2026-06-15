@@ -1,8 +1,5 @@
 """Caido Findings management via GraphQL."""
 
-import sys
-from pathlib import Path
-
 from .client import graphql
 
 # ── GraphQL fragments & queries ─────────────────────────────────────────────

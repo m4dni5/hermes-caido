@@ -81,9 +81,8 @@ This ensures the agent is always looking at the target, not background noise lik
 Skills use `execute_code` to call library functions:
 
 ```python
-from pathlib import Path
-import sys
-sys.path.insert(0, str(Path.home() / ".hermes" / "plugins" / "caido" / "lib"))
+import os, sys
+sys.path.insert(0, os.path.join(os.environ["CAIDO_PLUGIN_DIR"], "lib"))
 import http_requests
 
 results = http_requests.search(query='req.path.cont:"/api/"', limit=10)
@@ -118,7 +117,7 @@ python3 -m py_compile caido_tools.py
 - **Token cache:** `<hermes_home>/cache/caido-token.json`
 - **Caido URL/PAT:** `<hermes_home>/.env` or env vars `CAIDO_URL` / `CAIDO_PAT`
 - **Python executable:** `sys.executable` (same Python running the plugin)
-- **Caido schema version:** 0.57.0 (reference: `lib/graphql/schema.graphql`)
+- **Caido schema version:** 0.57.0
 
 Skills import the library via:
 ```python

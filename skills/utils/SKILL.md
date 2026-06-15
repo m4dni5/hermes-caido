@@ -15,7 +15,7 @@ Load this skill when you need to:
 - Get response-only view of a request
 - Manage scopes, filters, environments, or projects
 
-**For common operations, use the plugin tools directly** — `caido_search`, `caido_get`, `caido_findings`, `caido_create_finding`, `caido_health`, `caido_setup`.
+**For common operations, use the plugin tools directly** — `caido_onboard`, `caido_search`, `caido_get`, `caido_findings`, `caido_create_finding`, `caido_health`.
 
 ## How to Use
 
