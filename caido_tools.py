@@ -226,7 +226,7 @@ query Onboard {
         scope { scopeId }
     }
     scopes { id name allowlist denylist }
-    findings { id }
+    findings { count { value } }
 }"""
 
 
@@ -269,7 +269,7 @@ async def handle_onboard(args: dict, **kwargs) -> str:
         project = project_data.get("project", {})
         intercept = data.get("interceptOptions", {})
         scopes = data.get("scopes", [])
-        findings_count = len(data.get("findings", []))
+        findings_count = data.get("findings", {}).get("count", {}).get("value", 0)
 
         # Layer 4: Recent traffic summary (lightweight)
         recent_hosts = []
