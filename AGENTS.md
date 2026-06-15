@@ -58,6 +58,17 @@ We use raw GraphQL strings against Caido's v0.57.0 schema. The official Python S
 ### FUZZ slot pattern for placeholders
 Modify the raw request to embed `FUZZ` at the target location, then call `find_value(template, "FUZZ")` to get byte ranges. Payloads are bare data (`admin`, not `http://127.0.0.1/admin`). No preprocessors needed.
 
+### Scope-aware workflow
+Caido's GraphQL API has no concept of "the scope the history tab is filtering by" — the UI stores that client-side. The plugin bridges this gap:
+
+1. **`caido_onboard` suggests a scope** — matches recent traffic hosts against scope allowlists via glob patterns. Returns `suggested_scope` with matched hosts and reasoning.
+2. **Onboard sets the active scope** — stored in module-level state. All subsequent `search()` and `recent()` calls use it as the default filter.
+3. **The agent should ask the user** if no scope is suggested (no recent traffic, or traffic doesn't match any scope) or if multiple scopes are plausible.
+4. **Once a scope is chosen**, the agent relies on the active scope or passes `scope_id` explicitly.
+5. **To override**, pass `scope_id=None` to search/recent to disable filtering (see full history).
+
+This ensures the agent is always looking at the target, not background noise like `detectportal.firefox.com`.
+
 ## Working with the Codebase
 
 ### Adding a new GraphQL operation

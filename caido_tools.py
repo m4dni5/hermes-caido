@@ -284,6 +284,26 @@ async def handle_onboard(args: dict, **kwargs) -> str:
         except Exception:
             pass
 
+        # Layer 4b: Suggest scope by matching recent hosts against scope allowlists
+        suggested_scope = None
+        if recent_hosts and scopes:
+            from fnmatch import fnmatch
+            best_score = 0
+            for scope in scopes:
+                allowlist = scope.get("allowlist", [])
+                score = sum(
+                    1 for host in recent_hosts
+                    for pattern in allowlist
+                    if fnmatch(host, pattern) or fnmatch(host, f"*{pattern}*") or host == pattern
+                )
+                if score > best_score:
+                    best_score = score
+                    suggested_scope = {"id": scope["id"], "name": scope["name"], "matched_hosts": [
+                        host for host in recent_hosts
+                        for pattern in allowlist
+                        if fnmatch(host, pattern) or fnmatch(host, f"*{pattern}*") or host == pattern
+                    ]}
+
         # Layer 5: Hosted files
         hosted = []
         try:
@@ -291,6 +311,11 @@ async def handle_onboard(args: dict, **kwargs) -> str:
             hosted = [f["name"] for f in files if isinstance(f, dict) and "name" in f]
         except Exception:
             pass
+
+        # Set the suggested scope as active for subsequent search/recent calls
+        if suggested_scope:
+            from graphql.http_requests import set_active_scope
+            set_active_scope(suggested_scope["id"])
 
         return json.dumps({
             "health": {"status": "ok"},
@@ -310,6 +335,7 @@ async def handle_onboard(args: dict, **kwargs) -> str:
                 "response": intercept.get("response", {}).get("enabled"),
                 "scope_id": intercept.get("scope", {}).get("scopeId"),
             },
+            "suggested_scope": suggested_scope,
             "recent": {"count": recent_count, "hosts": recent_hosts},
             "findings_count": findings_count,
             "hosted_files": hosted,

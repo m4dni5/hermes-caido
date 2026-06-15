@@ -28,6 +28,21 @@ from .client import graphql  # noqa: E402
 # Sentinel for distinguishing "not passed" from "explicitly None"
 _UNSET = object()
 
+# Module-level active scope — set by onboard, used by search/recent as default
+_active_scope_id: str | None = None
+
+
+def set_active_scope(scope_id: str | None) -> None:
+    """Set the active scope for search/recent queries."""
+    global _active_scope_id
+    _active_scope_id = scope_id
+
+
+def get_active_scope() -> str | None:
+    """Return the currently active scope ID, or None."""
+    return _active_scope_id
+
+
 # ---------------------------------------------------------------------------
 # GraphQL fragments & queries (real Caido schema)
 # ---------------------------------------------------------------------------
@@ -228,8 +243,10 @@ async def search(
         direction = _ORDER_MAP.get((order or "DESC").upper(), "DESC")
         variables["order"] = {"by": by, "ordering": direction}
 
-        # Scope filtering — only apply if explicitly provided
-        if scope_id is not _UNSET and scope_id:
+        # Scope filtering — prefer explicit, fall back to active scope
+        if scope_id is _UNSET:
+            scope_id = _active_scope_id  # Use active scope if set by onboard
+        if scope_id:
             variables["scopeId"] = scope_id
 
         data = await gql(_SEARCH_REQUESTS, variables)
