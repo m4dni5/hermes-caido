@@ -1,6 +1,6 @@
 # hermes-caido
 
-Hermes Agent plugin for the [Caido](https://caido.io) HTTP proxy. Search history, replay requests, manage findings — all from your AI agent.
+Hermes Agent plugin for the [Caido](https://caido.io) HTTP proxy. Search history, replay requests, manage findings, run fuzzing campaigns — all from your AI agent.
 
 ## What It Does
 
@@ -8,21 +8,21 @@ Hermes Agent plugin for the [Caido](https://caido.io) HTTP proxy. Search history
 
 | Tool | Description |
 |---|---|
+| `caido_onboard` | Connect and gather full context — project, scopes, traffic, findings |
 | `caido_search` | Search proxy history with HTTPQL |
 | `caido_recent` | Get recent intercepted requests |
 | `caido_get` | Get request/response by ID |
 | `caido_findings` | List security findings |
 | `caido_create_finding` | Create a security finding |
-| `caido_health` | Check Caido connectivity and auth |
-| `caido_setup` | Diagnose auth issues, test connection |
+| `caido_health` | Check Caido connectivity |
 
 **Bundled skills** for everything else — loaded on demand, zero context cost until needed:
 
 | Skill | Description |
 |---|---|
-| `caido:replay` | Session management, edit-and-replay, HTTPQL reference |
-| `caido:utils` | Findings CRUD, export curl, scopes, filters, environments, projects |
-| `caido:automate` | Automate (fuzzer) — session CRUD, placeholders, payloads, task control |
+| `caido:replay` | Session management, edit-and-replay, curl-through-proxy guidance |
+| `caido:utils` | Auth setup, findings CRUD, export curl, scopes, filters, environments, projects |
+| `caido:automate` | Automate (fuzzer) — session CRUD, FUZZ slot placeholders, payloads, task control |
 | `caido:intercept` | Work in progress |
 
 ## Installation
@@ -33,7 +33,11 @@ git clone https://github.com/m4dni5/hermes-caido ~/.hermes/plugins/caido
 
 ## Usage
 
-The plugin tools are available immediately in any Hermes session. Just ask:
+Start any Caido session with the onboard tool to get full context:
+
+> "Onboard Caido"
+
+Then use the tools naturally:
 
 > "Search Caido for requests to /api"
 > "Show me recent requests in Caido"
@@ -45,7 +49,7 @@ For complex operations, the agent loads the relevant skill automatically:
 > "Replay request 42 through Caido"
 > "Edit the path to /admin and replay it"
 > "Export request 42 as curl"
-> "List all scopes in Caido"
+> "Fuzz the id parameter with numbers 1-1000"
 
 ## Requirements
 

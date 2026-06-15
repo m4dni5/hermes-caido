@@ -25,6 +25,9 @@ from typing import Any
 
 from .client import graphql  # noqa: E402
 
+# Sentinel for distinguishing "not passed" from "explicitly None"
+_UNSET = object()
+
 # ---------------------------------------------------------------------------
 # GraphQL fragments & queries (real Caido schema)
 # ---------------------------------------------------------------------------
@@ -88,7 +91,7 @@ query Requests(
 }}
 """
 
-_GET_REQUEST = f"""
+_GET_REQUEST = f"""\
 {_RESPONSE_FRAGMENT}
 
 {_REQUEST_FRAGMENT}
@@ -99,8 +102,7 @@ query Request(
   $includeResponseRaw: Boolean!
 ) {{
   request(id: $id) {{ ...RequestFull }}
-}}
-"""
+}}"""
 
 # ---------------------------------------------------------------------------
 # Sort-field mapping (CLI camelCase names → GraphQL enum values)
@@ -191,9 +193,18 @@ async def search(
     limit: int = 20,
     sort: str | None = None,
     order: str | None = None,
+    scope_id: Any = _UNSET,
     client: Any | None = None,
 ) -> dict[str, Any]:
     """HTTPQL search over HTTP requests.
+
+    Args:
+        query: HTTPQL filter string.
+        limit: Max results.
+        sort: Sort field (createdAt, host, method, path, statusCode).
+        order: ASC or DESC.
+        scope_id: Scope ID to filter by. Defaults to active Caido scope.
+            Pass None explicitly to disable scope filtering.
 
     Returns::
 
@@ -217,6 +228,10 @@ async def search(
         direction = _ORDER_MAP.get((order or "DESC").upper(), "DESC")
         variables["order"] = {"by": by, "ordering": direction}
 
+        # Scope filtering — only apply if explicitly provided
+        if scope_id is not _UNSET and scope_id:
+            variables["scopeId"] = scope_id
+
         data = await gql(_SEARCH_REQUESTS, variables)
         requests_data = data.get("requests", {})
         edges = requests_data.get("edges", [])
@@ -233,11 +248,13 @@ async def search(
 
 async def recent(
     limit: int = 20,
+    scope_id: Any = _UNSET,
     client: Any | None = None,
 ) -> dict[str, Any]:
     """Return the most recent requests (sorted by createdAt DESC)."""
     return await search(
-        query="", limit=limit, sort="createdAt", order="DESC"
+        query="", limit=limit, sort="createdAt", order="DESC",
+        scope_id=scope_id, client=client,
     )
 
 

@@ -1,6 +1,6 @@
 ---
 name: utils
-description: Caido utility operations — findings detail/update, export curl, scopes, filters, environments, projects via Python lib/
+description: Caido utility operations — auth setup, findings detail/update, export curl, scopes, filters, environments, projects via Python lib/
 tags: [worker, offensive]
 ---
 
@@ -9,6 +9,7 @@ tags: [worker, offensive]
 ## When to Use This Skill
 
 Load this skill when you need to:
+- Set up or troubleshoot Caido authentication (fresh install, token issues)
 - Get finding details or update a finding
 - Export requests as curl commands
 - Get response-only view of a request
@@ -28,6 +29,29 @@ sys.path.insert(0, str(Path.home() / ".hermes" / "plugins" / "caido" / "lib"))
 import http_requests
 import findings
 import management
+```
+
+## Authentication Setup
+
+For fresh installs or token issues. The `caido_onboard` tool handles the happy path automatically.
+
+```python
+import auth
+
+# Check auth status
+status = auth.auth_status()
+# Returns: {"token_cached": true, "token_expired": false, "connection_ok": true, ...}
+
+# Test full connectivity
+test = auth.test_connection()
+# Returns: {"health": true, "auth": true, "query": true, ...}
+
+# Configure credentials (runs auth flow in isolated subprocess)
+result = auth.setup(pat="caido_...", url="https://caido.example.com")
+# Returns: {"status": "success", "token_cached": true}
+
+# Clear cached tokens
+auth.clear_cache()
 ```
 
 ## Export Curl
@@ -69,8 +93,10 @@ result = findings.update_finding(
 
 ```python
 management.scopes()                              # List
-management.get_scope(scope_id="1")               # Get details
+management.get_scope(scope_id="1")               # Get details (name, allowlist, denylist)
 management.create_scope(name="Target", allow=["*.target.com"])  # Create
+management.rename_scope(scope_id="1", name="New Name")          # Rename only
+management.update_scope(scope_id="1", name="New", allowlist=["*.new.com"], denylist=["*.old.com"])  # Full update (merges with current if partial)
 management.delete_scope(scope_id="1")            # Delete
 ```
 

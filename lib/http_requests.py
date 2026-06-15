@@ -7,6 +7,7 @@ Usage:
 """
 
 from __future__ import annotations
+from typing import Any
 from sync import sync_run
 from graphql.http_requests import (
     search as _search,
@@ -17,14 +18,19 @@ from graphql.http_requests import (
 )
 
 
-def search(query: str = "", limit: int = 20, sort: str | None = None, order: str | None = None) -> dict:
-    """Search proxy history with HTTPQL."""
-    return sync_run(_search, query=query, limit=limit, sort=sort, order=order)
+def search(query: str = "", limit: int = 20, sort: str | None = None, order: str | None = None, scope_id: Any = None) -> dict:
+    """Search proxy history with HTTPQL.
+
+    Args:
+        scope_id: Scope ID to filter by. Defaults to active Caido scope.
+            Pass None to use active scope, or "" to disable filtering.
+    """
+    return sync_run(_search, query=query, limit=limit, sort=sort, order=order, scope_id=scope_id)
 
 
-def recent(limit: int = 20) -> dict:
+def recent(limit: int = 20, scope_id: Any = None) -> dict:
     """Get recent intercepted requests."""
-    return sync_run(_recent, limit=limit)
+    return sync_run(_recent, limit=limit, scope_id=scope_id)
 
 
 def get(request_id: str) -> dict:

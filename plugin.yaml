@@ -1,15 +1,15 @@
 name: caido
-version: 0.4.0
-description: Caido HTTP proxy integration — search requests, manage findings. Replay and advanced operations via bundled skills.
+version: 0.5.0
+description: Caido HTTP proxy integration — onboard, search requests, manage findings. Replay, automate, and advanced operations via bundled skills.
 author: matt
 provides_tools:
+  - caido_onboard
   - caido_search
   - caido_recent
   - caido_get
   - caido_findings
   - caido_create_finding
   - caido_health
-  - caido_setup
 provides_skills:
   - replay
   - utils
@@ -19,4 +19,4 @@ requires_env:
     description: "Caido Personal Access Token"
     secret: true
   - name: CAIDO_URL
-    description: "Caido instance URL (e.g. http://127.0.0.1:8081)"
+    description: "Caido instance URL (e.g. https://caido.example.com)"

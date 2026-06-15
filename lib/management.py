@@ -13,6 +13,8 @@ from graphql.management import (
     get_scope as _get_scope,
     create_scope as _create_scope,
     delete_scope as _delete_scope,
+    rename_scope as _rename_scope,
+    update_scope as _update_scope,
     filters as _filters,
     create_filter as _create_filter,
     delete_filter as _delete_filter,
@@ -42,6 +44,14 @@ def create_scope(name: str, allow: list[str] | None = None, deny: list[str] | No
 
 def delete_scope(scope_id: str) -> dict:
     return sync_run(_delete_scope, scope_id)
+
+
+def rename_scope(scope_id: str, name: str) -> dict:
+    return sync_run(_rename_scope, scope_id, name)
+
+
+def update_scope(scope_id: str, name: str | None = None, allowlist: list[str] | None = None, denylist: list[str] | None = None) -> dict:
+    return sync_run(_update_scope, scope_id, name=name, allowlist=allowlist, denylist=denylist)
 
 
 def filters(limit: int = 50) -> list:

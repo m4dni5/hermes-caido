@@ -243,16 +243,35 @@ async def _approve_via_cloud(pat: str, user_code: str) -> None:
 
 
 async def _wait_for_token_ws(url: str, request_id: str) -> dict[str, Any]:
-    """Subscribe to createdAuthenticationToken via websocket."""
+    """Subscribe to createdAuthenticationToken via websocket.
+
+    Uses graphql-transport-ws protocol (newer) matching the SDK.
+    """
     ws_url = url.replace("https://", "wss://").replace("http://", "ws://")
     ws_url = f"{ws_url}/ws/graphql"
 
     async with aiohttp.ClientSession() as s:
-        async with s.ws_connect(ws_url) as ws:
+        async with s.ws_connect(ws_url, protocols=["graphql-transport-ws"]) as ws:
+            # Connection init (required by graphql-transport-ws)
+            await ws.send_json({"type": "connection_init"})
+
+            # Wait for connection_ack
+            msg = await ws.receive()
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                data = json.loads(msg.data)
+                if data.get("type") == "connection_ack":
+                    logger.debug("Caido auth: WebSocket connection acknowledged")
+                elif data.get("type") == "connection_error":
+                    raise RuntimeError(f"WebSocket connection error: {data.get('payload')}")
+                else:
+                    raise RuntimeError(f"Unexpected WebSocket message: {data}")
+            elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSED):
+                raise RuntimeError(f"WebSocket error during handshake: {msg}")
+
             # Send subscription
             await ws.send_json({
                 "id": "1",
-                "type": "start",
+                "type": "subscribe",
                 "payload": {
                     "query": CREATED_TOKEN_SUB,
                     "variables": {"requestId": request_id},
@@ -263,12 +282,18 @@ async def _wait_for_token_ws(url: str, request_id: str) -> dict[str, Any]:
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     data = json.loads(msg.data)
-                    if data.get("type") == "data":
+                    if data.get("type") == "next":
                         payload = data.get("payload", {}).get("data", {}).get("createdAuthenticationToken", {})
                         if payload.get("token"):
+                            # Complete the subscription
+                            await ws.send_json({"id": "1", "type": "complete"})
                             return payload["token"]
                         if payload.get("error"):
                             raise RuntimeError(f"Auth error: {payload['error']}")
+                    elif data.get("type") == "error":
+                        raise RuntimeError(f"WebSocket subscription error: {data.get('payload')}")
+                    elif data.get("type") == "complete":
+                        break
                 elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSED):
                     break
 
@@ -467,7 +492,8 @@ async def health() -> dict[str, Any]:
 
 async def close() -> None:
     """Close the shared session."""
-    global _session
+    global _session, _current_loop
     if _session and not _session.closed:
         await _session.close()
     _session = None
+    _current_loop = None

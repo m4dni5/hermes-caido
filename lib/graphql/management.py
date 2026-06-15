@@ -28,6 +28,19 @@ DELETE_SCOPE_MUTATION = """mutation DeleteScope($id: ID!) {
   }
 }"""
 
+RENAME_SCOPE_MUTATION = """mutation RenameScope($id: ID!, $name: String!) {
+  renameScope(id: $id, name: $name) {
+    scope { id name }
+  }
+}"""
+
+UPDATE_SCOPE_MUTATION = """mutation UpdateScope($id: ID!, $input: UpdateScopeInput!) {
+  updateScope(id: $id, input: $input) {
+    error { __typename ... on InvalidGlobTermsUserError { message } ... on OtherUserError { message } }
+    scope { id name allowlist denylist }
+  }
+}"""
+
 
 # ─── Filters ─────────────────────────────────────────────────────────────────
 
@@ -165,6 +178,36 @@ async def delete_scope(scope_id, client=None) -> dict:
     try:
         result = await graphql(DELETE_SCOPE_MUTATION, {"id": scope_id})
         return _extract_deleted(result.get("deleteScope", {}))
+    except Exception as e:
+        return {"error": str(e)}
+
+
+async def rename_scope(scope_id, name, client=None) -> dict:
+    try:
+        result = await graphql(RENAME_SCOPE_MUTATION, {"id": scope_id, "name": name})
+        payload = result.get("renameScope", {})
+        return payload.get("scope", {"error": "No scope returned"})
+    except Exception as e:
+        return {"error": str(e)}
+
+
+async def update_scope(scope_id, name=None, allowlist=None, denylist=None, client=None) -> dict:
+    try:
+        # Fetch current scope to merge partial updates
+        current = await get_scope(scope_id)
+        if "error" in current:
+            return current
+        input_vars = {
+            "name": name or current.get("name", ""),
+            "allowlist": allowlist if allowlist is not None else current.get("allowlist", []),
+            "denylist": denylist if denylist is not None else current.get("denylist", []),
+        }
+        result = await graphql(UPDATE_SCOPE_MUTATION, {"id": scope_id, "input": input_vars})
+        payload = result.get("updateScope", {})
+        err_msg = _check_error(payload)
+        if err_msg:
+            return {"error": err_msg}
+        return payload.get("scope", {"error": "No scope returned"})
     except Exception as e:
         return {"error": str(e)}
 
