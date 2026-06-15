@@ -58,8 +58,16 @@ def format_entry_compact(entry: dict) -> str:
     host = entry.get("host", "")
     path = entry.get("path", "/")
     status = entry.get("statusCode", "?")
+    length = entry.get("length", 0)
     created = entry.get("createdAt", "")
-    return f"{entry_id} {method} {host}{path} [{status}] {created}"
+    # Format length as human-readable
+    if length >= 1024 * 1024:
+        size = f"{length / 1024 / 1024:.1f}MB"
+    elif length >= 1024:
+        size = f"{length / 1024:.1f}KB"
+    else:
+        size = f"{length}B"
+    return f"{entry_id} {method} {host}{path} [{status}] {size} {created}"
 
 
 def format_curl(request_data: dict) -> str:
