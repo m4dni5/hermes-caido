@@ -13,8 +13,29 @@ Load this skill when you need to:
 - Edit requests and replay them (change path, method, headers, body)
 - Manage replay sessions (create, rename, delete, list)
 - Manage replay collections (create, list)
+- Send custom curl commands and want them captured in Caido
 
 **For simple operations, use the plugin tools directly** — `caido_search`, `caido_get`, `caido_findings`, `caido_health`. No `execute_code` needed.
+
+## Routing curl Through the Caido Proxy
+
+When you need to use `curl` directly (SSRF payloads, custom requests, testing exploits), **always route through the Caido proxy** so the traffic is captured in proxy history:
+
+```bash
+curl --proxy http://127.0.0.1:8080 -X POST "http://target/" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "param=value"
+```
+
+This ensures:
+- Requests appear in `caido_search` and `caido_recent`
+- Responses can be inspected with `caido_get`
+- Findings can be linked to specific requests
+- The full request/response is logged for later analysis
+
+The proxy URL is the same as `CAIDO_URL` (the Caido instance URL). If the agent doesn't know the proxy URL, it can check with `caido_setup` (action: status) or read from `CAIDO_URL` in `~/.hermes/.env`.
+
+**Without the proxy flag, curl traffic is invisible to Caido.**
 
 ## How to Use
 

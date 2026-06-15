@@ -17,6 +17,8 @@ Load this skill when you need to:
 
 **For simple operations, use the plugin tools directly** — `caido_search`, `caido_get`, `caido_findings`, `caido_health`. No `execute_code` needed.
 
+**When testing exploit payloads manually, route curl through the Caido proxy** — see `caido:replay` for the `--proxy` pattern. This ensures all traffic is captured in proxy history.
+
 ## How to Use
 
 Use `execute_code` (not `terminal`) to call these functions. The agent imports and calls them directly — no shell subprocess needed.
@@ -77,11 +79,36 @@ automate.resume_task(task_id="1")
 
 Placeholders define byte ranges in the raw HTTP request that get substituted with payloads. Use the helpers in `placeholders.py` — no manual byte math.
 
-### Approach A: Value search (find by what's there)
+### Recommended: FUZZ slot pattern
+
+Modify the raw request to embed `FUZZ` at the target location, then find its byte range. Payloads become bare data — no preprocessors needed.
 
 ```python
 import placeholders
 
+# 1. Decode the raw request
+raw = base64.b64decode(session["raw"]).decode("utf-8")
+
+# 2. Substitute the target with FUZZ
+template = raw.replace("truckapi.htb/?id%3DFusionExpress03", "127.0.0.1/FUZZ/")
+
+# 3. Find where FUZZ landed
+ranges = placeholders.find_value(template, "FUZZ")
+# → [{"start": 399, "end": 403}]
+
+# 4. Use template as the new raw, ranges as the placeholder
+# Payloads are just bare paths: ["admin", "js", "css", "login", ...]
+```
+
+This is better than placing a placeholder on the entire value because:
+- Payloads are bare data (`admin`) not full URLs (`http://127.0.0.1/admin`)
+- No URL-encoding issues — the URL structure is baked into the template
+- Smaller byte range — less chance of breaking the request
+- No preprocessors needed
+
+### Approach A: Value search (find by what's there)
+
+```python
 # Find all occurrences of "admin" in the raw request
 ranges = placeholders.find_value(raw, "admin")
 # → [{"start": 142, "end": 147}]
@@ -102,11 +129,11 @@ ranges = placeholders.placeholder_for_param(raw, "user_id")
 # Form-encoded body — finds password=secret123 and returns byte range of "secret123"
 ranges = placeholders.placeholder_for_param(raw, "password")
 
-# Header value — finds Authorization: Bearer token and returns byte range of the value
+# Header value — finds Authorization: Bearer *** and returns byte range of the value
 ranges = placeholders.placeholder_for_header(raw, "Authorization")
 ```
 
-Use Approach B first (semantic, doesn't need the current value). Fall back to Approach A for unstructured data or when you need to match a specific value.
+Use the FUZZ slot pattern first (most ergonomic). Fall back to Approach B (semantic) when you know the parameter name. Fall back to Approach A (value search) for unstructured data.
 
 ## Payloads — What to Inject
 
@@ -179,21 +206,28 @@ automate.rename_session(session_id=session_id, name="idor-test")
 
 # 2. Get the raw request from the session
 full = automate.get_session(session_id)
-raw_bytes = base64.b64decode(full["raw"])
-raw = raw_bytes.decode("utf-8")
+raw = base64.b64decode(full["raw"]).decode("utf-8")
 
-# 3. Find what to fuzz
-ranges = placeholders.placeholder_for_param(raw, "id")
-# Or: ranges = placeholders.find_value(raw, "42")
+# 3. Craft the template — embed FUZZ at the target
+template = raw.replace("id=42", "id=FUZZ")
 
-# 4. Configure (coming in Phase 2)
-# automate.update_session(session_id, settings={"placeholders": ranges, "payloads": [...], ...})
+# 4. Find the FUZZ byte range
+ranges = placeholders.find_value(template, "FUZZ")
 
-# 5. Run
+# 5. Update session with the template and placeholder
+connection = full["connection"]
+automate.update_session(session_id,
+    raw=template,
+    connection={"host": connection["host"], "port": connection["port"], "isTLS": connection["isTLS"]},
+    settings={
+        "placeholders": ranges,
+        "payloads": payloads.build_payload_input([["1", "2", "3", "admin"]]),
+        "strategy": "ALL",
+        ...  # see payloads section
+    })
+
+# 6. Run
 result = automate.start_task(session_id=session_id)
-
-# 6. Check results (coming in Phase 4)
-# requests = automate.get_entry_requests(...)
 ```
 
 ## Pitfalls
@@ -203,6 +237,8 @@ result = automate.start_task(session_id=session_id)
 3. **`create_session` with no request_id** creates an empty session — you'll need to configure raw request manually
 4. **`raw` field is base64-encoded** — it's a GraphQL Blob type. Decode with `base64.b64decode(session["raw"]).decode("utf-8")` before using placeholder helpers
 5. **Placeholder byte offsets are 0-indexed** and count UTF-8 encoded bytes, not characters
-6. **Tasks are tied to entries, not sessions** — `start_task` takes a session ID but creates a task per entry
-7. **`cancelAutomateTask` returns `cancelledId`** not `deletedId` — different from other delete operations
-8. **Pause/resume error field is `userError`** not `error` — different from most other mutations
+6. **URL-encode payload values** when fuzzing inside URLs — Caido's hosted file payloads don't auto-encode. Use the `urlEncode` preprocessor or pre-encode your wordlist.
+7. **FUZZ slot pattern beats whole-value placeholders** — embed `FUZZ` in the raw template, fuzz the smallest variable part
+8. **Tasks are tied to entries, not sessions** — `start_task` takes a session ID but creates a task per entry
+9. **`cancelAutomateTask` returns `cancelledId`** not `deletedId` — different from other delete operations
+10. **Pause/resume error field is `userError`** not `error` — different from most other mutations
