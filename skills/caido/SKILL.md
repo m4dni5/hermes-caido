@@ -75,6 +75,13 @@ from the UI resolves automatically.
 **Replay sessions accumulate entries** — each send appends one. The UI shows
 the latest with a History drop-down/arrows for previous ones.
 
+**Replay edits are literal — there is no url_encode option.** `caido_replay`
+passes method/path/header/body edits verbatim into the raw request. If you put
+a space or reserved character in a path/query edit (`?uid=admin' or '1'='1`),
+the request line is malformed and the server returns 400 with empty
+method/path in history. Encode URL edits yourself (`%20`, `%27`, etc.) — unlike
+`caido_automate`, replay will not do it for you.
+
 ## Preprocessors vs. payload crafting
 
 Caido supports preprocessors (prefix, suffix, urlEncode, custom workflows), but
@@ -205,6 +212,12 @@ handle. If the target is slow, results may show `error/no-response` with a
     new entry to the session's history. Use `caido_replay(session_id=...)`
     to iterate (auth bypass, param tweaks) and keep attempts grouped; the UI
     shows the latest with a History drop-down/arrows for previous ones.
+12. **Replay edits are literal; automate payloads are encoded** — the two
+    tools have opposite defaults. `caido_automate` URL-encodes payloads
+    (url_encode: true); `caido_replay` passes path/method/header/body edits
+    verbatim. A space or quote in a replay path/query edit produces a
+    malformed request line → 400 with empty method/path. Encode replay URL
+    edits yourself; let automate's default handle its payloads.
 
 ## HTTPQL Quick Reference (for caido_search / result filtering)
 

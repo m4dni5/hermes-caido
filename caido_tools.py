@@ -578,7 +578,9 @@ async def handle_onboard(args: dict, **kwargs) -> str:
                     "Use Caido tools when the user should see or build on the work. "
                     "When you're exploring independently and the user doesn't need "
                     "to watch, use terminal tools (curl/ffuf) instead — they're "
-                    "faster and don't clutter the shared history."
+                    "faster and don't clutter the shared history. "
+                    "For the full decision framework — tool map, replay vs automate, "
+                    "payload encoding, pitfalls — load the caido:caido skill."
                 ),
             },
         }, indent=2)
