@@ -21,6 +21,7 @@ from graphql.automate import (
     cancel_task as _cancel_task,
     pause_task as _pause_task,
     resume_task as _resume_task,
+    get_entry_requests as _get_entry_requests,
 )
 
 
@@ -87,3 +88,19 @@ def pause_task(task_id: str) -> dict:
 def resume_task(task_id: str) -> dict:
     """Resume a paused automate task."""
     return sync_run(_resume_task, task_id)
+
+
+def get_entry_requests(entry_id: str, limit: int = 50, order: dict | None = None, filter_code: str | None = None) -> dict:
+    """Retrieve the requests an automate entry/task produced (Phase 4).
+
+    Args:
+        entry_id: ID of the automate entry (task.entryId from start_task).
+        limit: Max results to return.
+        order: AutomateEntryRequestOrderInput dict, e.g.
+            {"by": "RESP_STATUS_CODE", "ordering": "DESC"}.
+        filter_code: Optional HTTPQL string to filter results.
+
+    Returns:
+        Dict with ``entry``, ``count``, ``results``.
+    """
+    return sync_run(_get_entry_requests, entry_id=entry_id, limit=limit, order=order, filter_code=filter_code)

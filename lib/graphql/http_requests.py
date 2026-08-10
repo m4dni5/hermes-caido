@@ -440,9 +440,10 @@ async def get(
         if node is None:
             return {"error": f"Request {request_id!r} not found"}
         result = _map_node(node)
-        # Surface the UI number when we resolved through the metadata namespace.
-        if resolved.get("metadata_id"):
-            result["metadata_id"] = resolved["metadata_id"]
+        # Surface the UI number: metadata.id (the group key shown in the Caido
+        # UI history table). Always present, whether we resolved via metadata
+        # or the request came from a plain Request.id lookup.
+        result["metadata_id"] = resolved.get("metadata_id") or (result.get("metadata") or {}).get("id")
         if resolved.get("metadata_matches"):
             result["metadata_matches"] = resolved["metadata_matches"]
         return result

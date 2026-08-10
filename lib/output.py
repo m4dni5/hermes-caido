@@ -48,15 +48,16 @@ def extract_headers(headers: Optional[list[dict]]) -> str:
 def format_entry_compact(entry: dict) -> str:
     """Format a single request entry in compact mode.
 
-    Takes a dict with id, method, host, path, statusCode, createdAt.
+    Takes a dict with id, method, host, path, query, statusCode, createdAt.
 
     Returns:
-        A single line: "{id} {method} {host}{path} [{statusCode}] {createdAt}"
+        A single line: "{id} {method} {host}{path}[?{query}] [{statusCode}] {createdAt}"
     """
     entry_id = entry.get("id", "?")
     method = entry.get("method", "?")
     host = entry.get("host", "")
     path = entry.get("path", "/")
+    query = entry.get("query", "")
     status = entry.get("statusCode", "?")
     length = entry.get("length", 0)
     created = entry.get("createdAt", "")
@@ -67,7 +68,8 @@ def format_entry_compact(entry: dict) -> str:
         size = f"{length / 1024:.1f}KB"
     else:
         size = f"{length}B"
-    return f"{entry_id} {method} {host}{path} [{status}] {size} {created}"
+    full_path = f"{path}?{query}" if query else path
+    return f"{entry_id} {method} {host}{full_path} [{status}] {size} {created}"
 
 
 def format_curl(request_data: dict) -> str:

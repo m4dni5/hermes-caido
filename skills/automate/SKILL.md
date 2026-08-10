@@ -51,6 +51,24 @@ keeps the shared history clean.
 | Multi-placeholder / advanced config | `lib/automate` + `lib/payloads` + `lib/placeholders` via execute_code |
 | Hand a request to ffuf | `caido_export_curl(request_id)` then run the curl in ffuf |
 
+## Results — what the run produced
+
+`caido_automate_status` returns the run's outcomes, not just "started":
+
+- **`status_codes`** — distribution across the run (e.g. `{"200": 3, "403": 2}`),
+  with `error/no-response` for requests that timed out or failed
+- **`errors`** — count by error type (e.g. `{"Timeout": 5}`)
+- **`highlights`** — non-2xx / errored results with their payload values
+- **`results`** (with `brief: false`) — full list: payload → request → status
+
+**Use `session_id` for polling.** `caido_automate` returns three handles —
+`session_id`, `task_id`, `entry_id` — but only sessions (and their entries)
+persist after a run finishes. Tasks drop off the recent list, so `task_id`
+works only while the run is visible. Pass `session_id` (or `entry_id`) to
+`caido_automate_status` to poll both in-progress and completed runs with one
+handle. If the target is slow, results may show `error/no-response` with a
+`Timeout` error — that's the fuzzer's own timeout, not a plugin bug.
+
 ## Strategy × Payloads Decision Table
 
 `caido_automate` accepts a single payload list (one placeholder). The strategy
@@ -133,6 +151,9 @@ result = automate.start_task(session_id)
    errors come back in `userError`, not `error`.
 8. **Deleting a session with a task fails** — cancel the task first
    (`cancel_task`), then delete the session.
+9. **Completed tasks leave the recent list** — poll with `session_id` (or
+   `entry_id`), not `task_id`, after the run finishes; sessions and entries
+   persist with all results.
 
 ## HTTPQL Quick Reference (for result filtering)
 

@@ -218,7 +218,7 @@ async def handle_export_curl(args: dict, **kwargs) -> str:
 
 async def handle_replay(args: dict, **kwargs) -> str:
     try:
-        from graphql.replay import replay as replay_request, replay_with_edit
+        from graphql.replay import replay as replay_request, replay_with_edit, get_session_result
 
         request_id = args["request_id"]
         has_edits = any(k in args for k in ("path", "method", "headers", "body"))
@@ -233,6 +233,19 @@ async def handle_replay(args: dict, **kwargs) -> str:
             )
         else:
             result = await replay_request(request_id=request_id)
+
+        # Attach the outcome: what the server returned for the replayed request.
+        # This saves the agent from hunting through sessions/history to find
+        # whether the request succeeded and what the response was. The entry's
+        # request link populates asynchronously, so poll briefly.
+        if "error" not in result and result.get("sessionId"):
+            for _ in range(5):
+                outcome = await get_session_result(result["sessionId"])
+                if "error" not in outcome and outcome.get("entry", {}).get("request"):
+                    break
+                await asyncio.sleep(0.5)
+            if "error" not in outcome and outcome.get("entry", {}).get("request"):
+                result["result"] = outcome["entry"]
         return json.dumps(result, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)}, indent=2)
@@ -336,14 +349,78 @@ async def handle_automate(args: dict, **kwargs) -> str:
 
 async def handle_automate_status(args: dict, **kwargs) -> str:
     try:
-        from graphql.automate import list_tasks as automate_list_tasks
+        from graphql.automate import list_tasks as automate_list_tasks, get_entry_requests, get_session as automate_get_session
 
-        task_id = args["task_id"]
-        tasks = await automate_list_tasks(limit=100)
-        for t in tasks:
-            if t.get("id") == task_id:
-                return json.dumps(t, indent=2)
-        return json.dumps({"task_id": task_id, "status": "not_found"}, indent=2)
+        task_id = args.get("task_id")
+        entry_id = args.get("entry_id")
+        session_id = args.get("session_id")
+
+        result: dict = {}
+        # session_id is the stable handle: sessions (and their entries) persist
+        # after the task leaves the recent list. Resolve to the latest entry.
+        if session_id:
+            result["session_id"] = session_id
+            session = await automate_get_session(session_id)
+            if "error" in session:
+                return json.dumps({"error": session["error"]}, indent=2)
+            entries = session.get("entries", [])
+            if not entries:
+                return json.dumps({
+                    "session_id": session_id,
+                    "status": "no_entries",
+                    "note": "Session exists but has no entries yet. Run caido_automate on this session first.",
+                }, indent=2)
+            entry_id = entry_id or entries[-1]["id"]
+
+        if task_id:
+            result["task_id"] = task_id
+            # Task listing only shows recent/in-progress tasks; completed
+            # tasks fall off, but the session/entry persists. Resolve entry
+            # via the task when visible, else fall back to the caller-supplied
+            # entry_id (or a session_id, handled above).
+            tasks = await automate_list_tasks(limit=100)
+            task = next((t for t in tasks if t.get("id") == task_id), None)
+            if task:
+                result["paused"] = task.get("paused")
+                if task.get("entryId"):
+                    entry_id = entry_id or task["entryId"]
+            elif not entry_id:
+                return json.dumps({
+                    "task_id": task_id,
+                    "status": "completed_or_unknown",
+                    "note": "Task no longer in the recent list. Pass session_id or entry_id (from caido_automate output) to retrieve results for completed runs.",
+                }, indent=2)
+
+        if entry_id:
+            result["entry_id"] = entry_id
+            entry = await get_entry_requests(entry_id=entry_id, limit=args.get("limit", 50))
+            if "error" in entry:
+                result["results_error"] = entry["error"]
+            else:
+                results = entry.get("results", [])
+                result["entry_name"] = (entry.get("entry") or {}).get("name")
+                result["count"] = entry.get("count", len(results))
+                # Summarize status-code distribution + non-2xx highlights.
+                from collections import Counter
+                codes = Counter(r.get("request", {}).get("statusCode") for r in results)
+                status_codes = {}
+                for code, count in sorted(codes.items(), key=lambda kv: (-kv[1], str(kv[0]))):
+                    label = "error/no-response" if code is None else str(code)
+                    status_codes[label] = count
+                result["status_codes"] = status_codes
+                errors = [r.get("error") for r in results if r.get("error")]
+                if errors:
+                    from collections import Counter as _C
+                    result["errors"] = dict(_C(errors))
+                interesting = [
+                    r for r in results
+                    if (r.get("request", {}).get("statusCode") or 0) >= 400 or r.get("error")
+                ]
+                result["highlights"] = interesting[:10]
+                result["results"] = results[:10] if not args.get("brief", True) else None
+        elif not task_id and not session_id:
+            return json.dumps({"error": "Pass task_id, session_id, or entry_id"}, indent=2)
+        return json.dumps(result, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)}, indent=2)
 

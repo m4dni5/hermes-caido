@@ -346,18 +346,41 @@ CAIDO_AUTOMATE = {
 CAIDO_AUTOMATE_STATUS = {
     "name": "caido_automate_status",
     "description": (
-        "Check the status of a Caido Automate task. Returns the task id, paused "
-        "state, and the automate entry it runs. Use after caido_automate to poll "
-        "completion. Result bodies are not yet returned (see skill)."
+        "Check the status of a Caido Automate task and retrieve its results. "
+        "Returns the task/session/entry ids, paused state, and — once complete — "
+        "what the run produced: count, status-code distribution, and highlighted "
+        "non-2xx responses (with payload values). Pass session_id (the stable "
+        "handle from caido_automate) for both in-progress and completed runs — "
+        "sessions persist after tasks leave the recent list. task_id works while "
+        "the task is visible; entry_id works anytime. Use after caido_automate "
+        "to poll and judge outcomes."
     ),
     "parameters": {
         "type": "object",
         "properties": {
+            "session_id": {
+                "type": "string",
+                "description": "Automate session ID from caido_automate — the stable handle; resolves to the latest entry whether the task is running or completed.",
+            },
             "task_id": {
                 "type": "string",
-                "description": "Task ID returned by caido_automate.",
+                "description": "Task ID returned by caido_automate (works while the task is in the recent list).",
+            },
+            "entry_id": {
+                "type": "string",
+                "description": "Automate entry ID returned by caido_automate — the durable handle for retrieving results.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Max results to fetch from the entry (default 50).",
+                "default": 50,
+            },
+            "brief": {
+                "type": "boolean",
+                "description": "Return only summary + highlights, omitting the full results list (default true).",
+                "default": True,
             },
         },
-        "required": ["task_id"],
+        "required": [],
     },
 }

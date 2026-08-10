@@ -191,6 +191,37 @@ query AutomateTasks($first: Int) {
   }
 }"""
 
+# Result retrieval (Phase 4): the requests a task produced, with responses.
+_AUTOMATE_ENTRY_REQUESTS = """\
+query AutomateEntryRequests(
+  $id: ID!
+  $first: Int
+  $after: String
+  $filter: HTTPQLInput
+  $order: AutomateEntryRequestOrderInput
+) {
+  automateEntry(id: $id) {
+    id
+    name
+    requests(first: $first, after: $after, filter: $filter, order: $order) {
+      count { value }
+      edges {
+        cursor
+        node {
+          sequenceId
+          error
+          payloads { position raw }
+          request {
+            id host method path port isTls
+            response { statusCode length roundtripTime }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -488,5 +519,90 @@ async def resume_task(task_id: str, client=None) -> dict:
             return {"error": f"{err.get('__typename', 'Unknown')}: {err.get('code', '')}"}
         task = result.get("automateTask", {})
         return {"id": task.get("id"), "paused": task.get("paused")}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Public API — results (Phase 4)
+# ---------------------------------------------------------------------------
+
+
+def _parse_entry_request(node: dict[str, Any]) -> dict[str, Any]:
+    """Parse an AutomateEntryRequest node into a plain dict."""
+    req = node.get("request") or {}
+    resp = req.get("response") or {}
+    payloads = []
+    for p in node.get("payloads") or []:
+        raw_b64 = p.get("raw")
+        raw = raw_b64
+        if raw_b64:
+            try:
+                raw = base64.b64decode(raw_b64).decode("utf-8")
+            except Exception:
+                pass
+        payloads.append({"position": p.get("position"), "value": raw})
+    return {
+        "sequence_id": node.get("sequenceId"),
+        "error": node.get("error"),
+        "payloads": payloads,
+        "request": {
+            "id": req.get("id"),
+            "host": req.get("host"),
+            "method": req.get("method"),
+            "path": req.get("path"),
+            "port": req.get("port"),
+            "isTls": req.get("isTls"),
+            "statusCode": resp.get("statusCode"),
+            "length": resp.get("length"),
+            "roundtripTime": resp.get("roundtripTime"),
+        },
+    }
+
+
+async def get_entry_requests(
+    entry_id: str,
+    limit: int = 50,
+    order: dict | None = None,
+    filter_code: str | None = None,
+    client=None,
+) -> dict:
+    """Retrieve the requests an automate entry/task produced.
+
+    Phase 4 result retrieval. Each result carries the injected payload(s) and
+    the resulting request/response (status code, length, roundtrip).
+
+    Args:
+        entry_id: ID of the automate entry (task.entryId from start_task).
+        limit: Max results to return.
+        order: AutomateEntryRequestOrderInput dict, e.g.
+            {"by": "RESP_STATUS_CODE", "ordering": "DESC"}.
+        filter_code: Optional HTTPQL string to filter results.
+
+    Returns:
+        Dict with ``entry`` (id/name), ``count``, ``results`` (list).
+    """
+    try:
+        variables: dict[str, Any] = {"id": entry_id, "first": limit}
+        if order:
+            variables["order"] = order
+        if filter_code:
+            variables["filter"] = {"code": filter_code}
+        data = await graphql(_AUTOMATE_ENTRY_REQUESTS, variables)
+        entry = data.get("automateEntry", {})
+        if not entry:
+            return {"error": f"Entry {entry_id!r} not found"}
+        conn = entry.get("requests", {})
+        edges = conn.get("edges", [])
+        results = [
+            _parse_entry_request(edge["node"])
+            for edge in edges
+            if edge.get("node")
+        ]
+        return {
+            "entry": {"id": entry.get("id"), "name": entry.get("name")},
+            "count": (conn.get("count") or {}).get("value", len(results)),
+            "results": results,
+        }
     except Exception as exc:
         return {"error": str(exc)}

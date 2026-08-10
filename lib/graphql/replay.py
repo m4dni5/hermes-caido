@@ -68,7 +68,7 @@ query ReplaySession($id: ID!) {
                 raw
                 connection { host port isTLS }
               }
-              request { id method path host }
+              request { id method path host query response { statusCode length roundtripTime } }
             }
           }
         }
@@ -88,7 +88,7 @@ query ReplayEntry($id: ID!, $sessionKind: ReplaySessionKind!) {
         raw
         connection { host port isTLS }
       }
-      request { id method path host }
+      request { id method path host query response { statusCode length roundtripTime } }
     }
   }
 }"""
@@ -234,6 +234,48 @@ async def get_session_entries(session_id: str, client=None) -> list:
     if "error" in result:
         return [result]
     return result.get("entries", [])
+
+
+async def get_session_result(session_id: str, client=None) -> dict:
+    """Get the outcome of a replayed request: the latest entry's request+response.
+
+    Used by ``caido_replay`` to report what the server actually returned, so
+    the agent doesn't have to hunt through sessions/history for the result.
+
+    Args:
+        session_id: ID of the replay session.
+
+    Returns:
+        Dict with ``entry`` (latest entry's request + response summary), or
+        ``{"error": ...}`` if the session has no runnable entry yet.
+    """
+    result = await get_session(session_id, client=client)
+    if "error" in result:
+        return result
+    entries = result.get("entries", [])
+    if not entries:
+        return {"error": f"Session {session_id!r} has no entries yet"}
+    # Last entry is the most recent run; prefer one with a linked request.
+    entry = entries[-1]
+    req = entry.get("request")
+    resp = (req or {}).get("response") or {}
+    return {
+        "entry": {
+            "id": entry.get("id"),
+            "request": {
+                "id": (req or {}).get("id"),
+                "method": (req or {}).get("method"),
+                "path": (req or {}).get("path"),
+                "query": (req or {}).get("query"),
+                "host": (req or {}).get("host"),
+            } if req else None,
+            "response": {
+                "statusCode": resp.get("statusCode"),
+                "length": resp.get("length"),
+                "roundtripTime": resp.get("roundtripTime"),
+            } if resp else None,
+        },
+    }
 
 
 async def get_entry(entry_id: str, client=None) -> dict:
@@ -679,11 +721,18 @@ def _parse_entry(node: dict) -> dict:
 
     # Parse linked request
     if request:
+        response = request.get("response") or {}
         entry["request"] = {
             "id": request.get("id"),
             "method": request.get("method"),
             "path": request.get("path"),
+            "query": request.get("query"),
             "host": request.get("host"),
+            "response": {
+                "statusCode": response.get("statusCode"),
+                "length": response.get("length"),
+                "roundtripTime": response.get("roundtripTime"),
+            } if response else None,
         }
 
     # Parse draft
