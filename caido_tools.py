@@ -151,11 +151,20 @@ async def handle_findings(args: dict, **kwargs) -> str:
 
 async def handle_create_finding(args: dict, **kwargs) -> str:
     try:
+        request_id = args.get("request_id")
+        # Resolve a UI-visible metadata.id to the canonical Request.id — the
+        # createFinding mutation keys on Request.id.
+        if request_id:
+            from graphql.http_requests import resolve_request_id
+            resolved = await resolve_request_id(request_id)
+            if isinstance(resolved, dict) and "error" in resolved:
+                return json.dumps(resolved, indent=2)
+            request_id = resolved.get("id", request_id)
         result = await create_finding(
             title=args["title"],
             description=args.get("description"),
             severity=args.get("severity"),
-            request_id=args.get("request_id"),
+            request_id=request_id,
         )
         return json.dumps(result, indent=2)
     except Exception as e:
