@@ -91,13 +91,16 @@ Modify the raw request to embed `FUZZ` at the target location, then call `find_v
 ### Scope-aware workflow
 Caido's GraphQL API has no concept of "the scope the history tab is filtering by" — the UI stores that client-side. The plugin bridges this gap:
 
-1. **`caido_onboard` suggests a scope** — matches recent traffic hosts against scope allowlists via glob patterns. Returns `suggested_scope` with matched hosts and reasoning.
+1. **`caido_onboard` suggests a scope** — matches recent traffic hosts against scope allowlists via glob patterns. Returns `suggested_scope` with matched hosts and reasoning, and reports `active_scope` (the scope now set).
 2. **Onboard sets the active scope** — stored in module-level state. All subsequent `search()` and `recent()` calls use it as the default filter.
 3. **The agent should ask the user** if no scope is suggested (no recent traffic, or traffic doesn't match any scope) or if multiple scopes are plausible.
 4. **Once a scope is chosen**, the agent relies on the active scope or passes `scope_id` explicitly.
-5. **To override**, pass `scope_id=None` to search/recent to disable filtering (see full history).
+5. **To override**, the `scope_id` sentinel semantics matter: `_UNSET` (default) = active scope; explicit `None` or `""` = disable filtering (see full history); a scope id = filter by that scope. The tool schemas expose `scope_id` on `caido_search`/`caido_recent`; handlers translate omitted → `_UNSET` so the default is scope-filtered, not unfiltered.
 
-This ensures the agent is always looking at the target, not background noise like `detectportal.firefox.com`.
+This ensures the agent is always looking at the target, not background noise like `detectportal.firefox.com`. When search comes back empty, check the active scope before concluding the traffic doesn't exist.
+
+### Proxy injection
+The Caido proxy listener is reachable from the shell (commonly `127.0.0.1:8080`). `curl -x http://127.0.0.1:8080 <url>` sends traffic through it; HTTPS requires `-k` because Caido MITMs with its own CA. Proxied traffic lands in history, so automate/replay can source it. See the skill's "Injecting traffic through the Caido proxy" section.
 
 ## Working with the Codebase
 

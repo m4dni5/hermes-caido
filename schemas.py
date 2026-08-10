@@ -37,7 +37,11 @@ CAIDO_SEARCH = {
         "passed through the proxy — using HTTPQL queries. Use this to find "
         "requests matching specific criteria such as path substrings, methods, "
         "hosts, headers, or status codes. HTTPQL string values are quoted, "
-        "integers are not; negations use ne/ncont/nlike/nregex."
+        "integers are not; negations use ne/ncont/nlike/nregex. "
+        "Search is scoped by default: caido_onboard sets the active scope, so "
+        "results are limited to that scope's hosts. Pass scope_id=\"\" to see "
+        "the full history (outside the scope) or scope_id=<id> to filter by a "
+        "different scope."
     ),
     "parameters": {
         "type": "object",
@@ -61,6 +65,10 @@ CAIDO_SEARCH = {
                 "description": "Return only the status line and headers, omitting the body (default false).",
                 "default": False,
             },
+            "scope_id": {
+                "type": "string",
+                "description": "Scope to filter by. Omit to use the active scope (set by caido_onboard). Pass empty string \"\" to disable scoping and search the full history. Pass a scope id to override.",
+            },
         },
         "required": ["query"],
     },
@@ -71,7 +79,10 @@ CAIDO_RECENT = {
     "description": (
         "Get the most recent HTTP requests from the Caido **proxy history**.  "
         "This is a shortcut for searching sorted by time descending.  Use when "
-        "you want to see what traffic the proxy has captured recently."
+        "you want to see what traffic the proxy has captured recently. "
+        "Scoped by default: results are limited to the active scope set by "
+        "caido_onboard. Pass scope_id=\"\" for the full recent history, or "
+        "scope_id=<id> to filter by a specific scope."
     ),
     "parameters": {
         "type": "object",
@@ -90,6 +101,10 @@ CAIDO_RECENT = {
                 "type": "boolean",
                 "description": "Return only the status line and headers, omitting the body (default false).",
                 "default": False,
+            },
+            "scope_id": {
+                "type": "string",
+                "description": "Scope to filter by. Omit to use the active scope (set by caido_onboard). Pass empty string \"\" to disable scoping and see the full recent history. Pass a scope id to override.",
             },
         },
         "required": [],

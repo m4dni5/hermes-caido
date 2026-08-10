@@ -34,6 +34,39 @@ it in Caido. If it's your own private probing, use the terminal.** Prefer
 `caido_export_curl` + ffuf for heavy enumeration — it's faster, headless, and
 keeps the shared history clean.
 
+## Injecting traffic through the Caido proxy
+
+The Caido proxy listens on the instance's proxy port (commonly
+`127.0.0.1:8080`). You can send traffic through it from the terminal — it
+lands in proxy history and becomes visible to `caido_search`/`caido_recent`:
+
+```bash
+# Plain HTTP
+curl -x http://127.0.0.1:8080 http://target.example/path
+
+# HTTPS — Caido MITMs TLS with its own CA, so use -k (or trust the CA)
+curl -sk -x http://127.0.0.1:8080 https://target.example/path
+```
+
+This is the shared-workspace loop: **terminal injects → proxy captures → agent
+searches → replay/automate on it.** Use it to seed history with a target the
+user hasn't browsed yet, then run automate against the captured request.
+
+## Scoping — how search/recent filter
+
+`caido_onboard` sets an **active scope** (module state) by matching recent
+hosts against scope allowlists. `caido_search` and `caido_recent` filter to
+that scope by default — traffic outside it (e.g. curl-injected hosts not in
+the scope) is invisible unless you opt out:
+
+- **Omit `scope_id`** → filtered by the active scope (the common case)
+- **`scope_id=""`** → no scope filter, full history
+- **`scope_id=<id>`** → filter by a specific scope
+
+If a search comes back empty but you expected traffic, check the active scope
+first — the request is probably there but outside it. `caido_onboard` reports
+`active_scope` so you always know the current filter.
+
 ## Tool Map
 
 Start every Caido session with `caido_onboard` — it returns health, auth,

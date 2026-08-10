@@ -111,11 +111,16 @@ def _format(data: dict, args: dict) -> str:
 
 async def handle_search(args: dict, **kwargs) -> str:
     try:
+        from graphql.http_requests import _UNSET
+        scope_id = args.get("scope_id")
+        if scope_id is None:
+            scope_id = _UNSET  # omitted → active scope
         data = await search(
             query=args["query"],
             limit=args.get("limit", 20),
             sort=args.get("sort"),
             order=args.get("order"),
+            scope_id=scope_id,
         )
         return _format(data, args)
     except Exception as e:
@@ -124,7 +129,11 @@ async def handle_search(args: dict, **kwargs) -> str:
 
 async def handle_recent(args: dict, **kwargs) -> str:
     try:
-        data = await recent(limit=args.get("limit", 20))
+        from graphql.http_requests import _UNSET
+        scope_id = args.get("scope_id")
+        if scope_id is None:
+            scope_id = _UNSET  # omitted → active scope
+        data = await recent(limit=args.get("limit", 20), scope_id=scope_id)
         return _format(data, args)
     except Exception as e:
         return json.dumps({"error": str(e)})
@@ -566,9 +575,11 @@ async def handle_onboard(args: dict, **kwargs) -> str:
             pass
 
         # Set the suggested scope as active for subsequent search/recent calls
+        active_scope_id = None
         if suggested_scope:
-            from graphql.http_requests import set_active_scope
+            from graphql.http_requests import set_active_scope, get_active_scope
             set_active_scope(suggested_scope["id"])
+            active_scope_id = get_active_scope()
 
         return json.dumps({
             "health": {"status": "ok"},
@@ -589,6 +600,7 @@ async def handle_onboard(args: dict, **kwargs) -> str:
                 "scope_id": (intercept.get("scope") or {}).get("scopeId"),
             },
             "suggested_scope": suggested_scope,
+            "active_scope": active_scope_id,
             "recent": {"count": recent_count, "hosts": recent_hosts},
             "findings_count": findings_count,
             "hosted_files": hosted,

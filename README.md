@@ -14,7 +14,7 @@ export requests as curl — all visible in the Caido UI you're watching.
 | `caido_health` | Check Caido connectivity |
 | `caido_search` | Search proxy history with HTTPQL |
 | `caido_recent` | Get recent intercepted requests |
-| `caido_get` | Get a request/response by ID (UI number or tool id) |
+| `caido_get` | Get a request/response by ID
 | `caido_findings` | List security findings |
 | `caido_create_finding` | Create a security finding |
 | `caido_delete_finding` | Delete a security finding |

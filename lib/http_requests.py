@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 from sync import sync_run
 from graphql.http_requests import (
+    _UNSET,
     search as _search,
     recent as _recent,
     get as _get,
@@ -21,18 +22,18 @@ from graphql.http_requests import (
 )
 
 
-def search(query: str = "", limit: int = 20, sort: str | None = None, order: str | None = None, scope_id: Any = None) -> dict:
+def search(query: str = "", limit: int = 20, sort: str | None = None, order: str | None = None, scope_id: Any = _UNSET) -> dict:
     """Search proxy history with HTTPQL.
 
     Args:
         scope_id: Scope ID to filter by. Defaults to active Caido scope.
-            Pass None to use active scope, or "" to disable filtering.
+            Pass None or "" to disable filtering.
     """
     return sync_run(_search, query=query, limit=limit, sort=sort, order=order, scope_id=scope_id)
 
 
-def recent(limit: int = 20, scope_id: Any = None) -> dict:
-    """Get recent intercepted requests."""
+def recent(limit: int = 20, scope_id: Any = _UNSET) -> dict:
+    """Get recent intercepted requests. Scope defaults to active Caido scope."""
     return sync_run(_recent, limit=limit, scope_id=scope_id)
 
 
