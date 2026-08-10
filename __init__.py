@@ -6,9 +6,10 @@ auth_setup, export_curl, replay, automate, automate_status.
 
 Design (tool-search era): every operation an agent-operator performs is a
 registered tool. Tool descriptions carry the decisions; one recipe skill
-(caido:automate) holds the automate strategy/payload cookbook. Advanced
-config (scopes, filters, envs, projects, raw session CRUD) stays in the
-lib/ layer, callable via execute_code.
+(caido:caido) holds the agent-operator cookbook — shared-workspace guidance,
+tool map, replay/automate decisions, pitfalls. Advanced config (scopes,
+filters, envs, projects, raw session CRUD) stays in the lib/ layer, callable
+via execute_code.
 
 No external SDK dependency — uses raw GraphQL via aiohttp.
 """
@@ -60,9 +61,9 @@ def register(ctx) -> None:  # noqa: ANN001 — plugin context type
         )
         logger.debug("Registered tool: %s", name)
 
-    # Bundle skills — one recipe cookbook
+    # Bundle skills — one agent-operator cookbook
     skills_dir = Path(__file__).parent / "skills"
-    for skill_name in ("automate",):
+    for skill_name in ("caido",):
         skill_path = skills_dir / skill_name / "SKILL.md"
         if skill_path.exists():
             ctx.register_skill(skill_name, skill_path)

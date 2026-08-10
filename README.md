@@ -21,11 +21,11 @@ Hermes Agent plugin for the [Caido](https://caido.io) HTTP proxy. Search history
 | `caido_export_curl` | Export a request as a curl command |
 | `caido_auth_setup` | Run the device-code auth flow |
 
-**One recipe skill** for automate decisions:
+**One agent-operator cookbook skill** — the decision layer on top of the tools:
 
 | Skill | Description |
 |---|---|
-| `caido:automate` | Strategy × payloads decision table, FUZZ slot pattern, pitfalls, IDOR/auth-bypass patterns |
+| `caido:caido` | Shared-workspace guidance, tool map, replay & automate decisions, FUZZ slot pattern, patterns, pitfalls, HTTPQL reference |
 
 ## Caido vs the terminal — when to use this plugin
 

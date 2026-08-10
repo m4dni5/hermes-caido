@@ -30,7 +30,7 @@ hermes-caido/
 │       ├── automate.py      # Async: automate sessions/tasks, update_session
 │       └── auth.py          # Async: auth_status, setup, clear_cache, test_connection
 └── skills/
-    └── automate/SKILL.md    # Recipe cookbook: strategy × payloads, FUZZ slot, pitfalls, patterns
+    └── caido/SKILL.md       # Agent-operator cookbook: shared workspace, tool map, replay/automate decisions, pitfalls, HTTPQL
 ```
 
 ## Two-Layer Design
@@ -49,8 +49,10 @@ Hermes uses progressive tool disclosure: all non-core tools sit behind
 `tool_search`/`tool_describe`/`tool_call`, and schemas load on demand. The
 context-cost rationale for hiding operations in skills is gone — every
 operation an agent-operator performs is a registered tool (12 total), and
-descriptions carry the decisions. The one remaining skill (`caido:automate`)
-is a recipe cookbook for automate *strategy*, which doesn't fit a tool schema.
+descriptions carry the decisions. The one remaining skill (`caido:caido`)
+is the agent-operator cookbook — shared-workspace guidance, tool map,
+replay/automate decisions, pitfalls — the judgment layer that doesn't fit a
+tool schema.
 
 ### Caido is the shared workspace
 The plugin's value is collaboration, not capability: most of what Caido does

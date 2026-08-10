@@ -1,14 +1,15 @@
 ---
-name: automate
-description: Caido Automate cookbook — when to use Caido vs terminal tools, strategy/payload decisions, FUZZ slot pattern, pitfalls, IDOR/auth-bypass patterns. Use with caido_automate / caido_automate_status tools.
+name: caido
+description: Caido cookbook — shared-workspace guidance, tool map, replay & automate decisions, FUZZ slot, patterns, pitfalls, HTTPQL. Load when driving Caido (search, replay, automate, findings).
 tags: [worker, offensive]
 ---
 
-# Caido Automate — Cookbook
+# Caido — Agent-Operator Cookbook
 
-Caido's automate engine is called **Automate**. The `caido_automate` tool runs
-a campaign in one call; this skill is the cookbook for *deciding what to automate
-and how* — strategy, payloads, and the pitfalls that silently break runs.
+Caido is the proxy in the user's workspace. This skill is the judgment layer:
+*when to use Caido vs the terminal*, *which tool to reach for*, and *the
+pitfalls that silently break sessions and runs*. Tool descriptions carry the
+mechanics; this carries the decisions.
 
 **FUZZ** (all-caps) is the literal placeholder token embedded in the raw
 request. Payloads are bare data (`admin`, not `http://host/admin`).
@@ -33,6 +34,47 @@ it in Caido. If it's your own private probing, use the terminal.** Prefer
 `caido_export_curl` + ffuf for heavy enumeration — it's faster, headless, and
 keeps the shared history clean.
 
+## Tool Map
+
+Start every Caido session with `caido_onboard` — it returns health, auth,
+project, scopes, recent hosts, and a workspace note. Then:
+
+| Need | Tool |
+|---|---|
+| Orient + set active scope | `caido_onboard` (first call of a session) |
+| Find a request in history | `caido_search(query, compact: true)` |
+| See what the proxy just captured | `caido_recent` |
+| Inspect a request/response pair | `caido_get(request_id)` — accepts UI numbers |
+| Record a vulnerability | `caido_create_finding(title, request_id, severity)` |
+| Review recorded findings | `caido_findings` |
+| Replay once (new session) | `caido_replay(request_id, ...edits)` |
+| Iterate in one session | `caido_replay(session_id, ...edits)` — appends to history |
+| Run a campaign (one placeholder) | `caido_automate(request_id, target, payloads, strategy)` |
+| Poll a campaign + results | `caido_automate_status(session_id)` |
+| Hand a request to ffuf | `caido_export_curl(request_id)` then run the curl in ffuf |
+| Check connectivity | `caido_health` |
+| Re-auth / token expiry | `caido_auth_setup` |
+
+**Request IDs are dual-namespace.** The Caido UI history table shows
+`metadata.id` (a group key); tools return the GraphQL `Request.id`. Every
+ID-taking tool (`caido_get`, `caido_replay`, `caido_automate`,
+`caido_export_curl`, `caido_create_finding`) accepts either — a number quoted
+from the UI resolves automatically.
+
+## Replay: one-shot vs iteration
+
+`caido_replay` has two modes (see its description):
+
+- **`request_id` mode** — creates a new session and replays once. Right for a
+  one-off replay the user referenced.
+- **`session_id` mode** — edits the session's latest entry and resends,
+  appending a new entry to the same session's history. Use for iterating on
+  the same request (auth bypass attempts, parameter tweaks) so all attempts
+  stay grouped in the Replay tab's history drop-down.
+
+**Replay sessions accumulate entries** — each send appends one. The UI shows
+the latest with a History drop-down/arrows for previous ones.
+
 ## Preprocessors vs. payload crafting
 
 Caido supports preprocessors (prefix, suffix, urlEncode, custom workflows), but
@@ -52,45 +94,7 @@ Rule of thumb: **write payloads to not need processing.**
   payload list yourself. It's just as easy, and the status tool then shows
   exactly what was sent — no invisible transform layer.
 
-## When to Use This Skill
-
-- The `caido_automate` tool returns an error and you need to understand why
-- You need MATRIX/PARALLEL strategy (multiple placeholders) — `caido_automate`
-  handles one placeholder; multi-slot runs go through `lib/` via execute_code
-- You're automating URLs and need to know about encoding
-- You want the standard patterns: IDOR, parameter automate, auth bypass
-- You're deciding whether to use Caido Automate or ffuf for a job
-
-## Tool Mapping
-
-| Need | Tool |
-|---|---|
-| Run a campaign (one placeholder) | `caido_automate(request_id, target, payloads, strategy)` |
-| Poll a task | `caido_automate_status(session_id)` |
-| Replay once (new session) | `caido_replay(request_id, ...edits)` |
-| Iterate in one session | `caido_replay(session_id, ...edits)` — appends to history |
-| Multi-placeholder / advanced config | `lib/automate` + `lib/payloads` + `lib/placeholders` via execute_code |
-| Hand a request to ffuf | `caido_export_curl(request_id)` then run the curl in ffuf |
-
-## Results — what the run produced
-
-`caido_automate_status` returns the run's outcomes, not just "started":
-
-- **`status_codes`** — distribution across the run (e.g. `{"200": 3, "403": 2}`),
-  with `error/no-response` for requests that timed out or failed
-- **`errors`** — count by error type (e.g. `{"Timeout": 5}`)
-- **`highlights`** — non-2xx / errored results with their payload values
-- **`results`** (with `brief: false`) — full list: payload → request → status
-
-**Use `session_id` for polling.** `caido_automate` returns three handles —
-`session_id`, `task_id`, `entry_id` — but only sessions (and their entries)
-persist after a run finishes. Tasks drop off the recent list, so `task_id`
-works only while the run is visible. Pass `session_id` (or `entry_id`) to
-`caido_automate_status` to poll both in-progress and completed runs with one
-handle. If the target is slow, results may show `error/no-response` with a
-`Timeout` error — that's the fuzzer's own timeout, not a plugin bug.
-
-## Strategy × Payloads Decision Table
+## Automate: strategy & the FUZZ slot
 
 `caido_automate` accepts a single payload list (one placeholder). The strategy
 controls how those values apply:
@@ -106,11 +110,9 @@ controls how those values apply:
 need 1 set *per placeholder*, all same length for PARALLEL. `caido_automate`
 validates this before starting.
 
-## FUZZ Slot Pattern (recommended)
-
-Embed `FUZZ` at the exact target, then use its byte range as the placeholder.
-Payloads become bare data — no preprocessors needed, URL structure stays baked
-into the template.
+**FUZZ slot pattern (recommended):** embed `FUZZ` at the exact target, then
+use its byte range as the placeholder. Payloads become bare data — URL
+structure stays baked into the template.
 
 ```python
 # via the tool — simplest
@@ -139,6 +141,24 @@ automate.update_session(session_id,
 result = automate.start_task(session_id)
 ```
 
+## Results — what the run produced
+
+`caido_automate_status` returns the run's outcomes, not just "started":
+
+- **`status_codes`** — distribution across the run (e.g. `{"200": 3, "403": 2}`),
+  with `error/no-response` for requests that timed out or failed
+- **`errors`** — count by error type (e.g. `{"Timeout": 5}`)
+- **`highlights`** — non-2xx / errored results with their payload values
+- **`results`** (with `brief: false`) — full list: payload → request → status
+
+**Use `session_id` for polling.** `caido_automate` returns three handles —
+`session_id`, `task_id`, `entry_id` — but only sessions (and their entries)
+persist after a run finishes. Tasks drop off the recent list, so `task_id`
+works only while the run is visible. Pass `session_id` (or `entry_id`) to
+`caido_automate_status` to poll both in-progress and completed runs with one
+handle. If the target is slow, results may show `error/no-response` with a
+`Timeout` error — that's the fuzzer's own timeout, not a plugin bug.
+
 ## Patterns
 
 - **IDOR** — automate the object id in a path or query (`/users/{id}`, `?user_id=`)
@@ -146,7 +166,8 @@ result = automate.start_task(session_id)
 - **Parameter automate** — discover hidden parameters with a wordlist of common
   names injected as `FUZZ=1` in the query string.
 - **Auth bypass** — automate header values (X-Forwarded-For, X-Original-URL) or
-  role claims in a JSON body; check status-code changes.
+  role claims in a JSON body; check status-code changes. Iterate in one replay
+  session via `caido_replay(session_id=...)`.
 - **Rate limiting** — SEQUENTIAL over the same request; watch for 429s.
 
 ## Pitfalls
@@ -185,7 +206,7 @@ result = automate.start_task(session_id)
     to iterate (auth bypass, param tweaks) and keep attempts grouped; the UI
     shows the latest with a History drop-down/arrows for previous ones.
 
-## HTTPQL Quick Reference (for result filtering)
+## HTTPQL Quick Reference (for caido_search / result filtering)
 
 String fields use quoted values; integers unquoted. No `NOT` — use `ne`,
 `ncont`, `nlike`, `nregex`. Common: `req.host.cont:"api"`,

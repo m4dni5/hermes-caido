@@ -16,7 +16,7 @@ provides_tools:
   - caido_export_curl
   - caido_auth_setup
 provides_skills:
-  - automate
+  - caido
 requires_env:
   - name: CAIDO_PAT
     description: "Caido Personal Access Token (required — all instances, including local, require auth)"

@@ -9,8 +9,9 @@ Registered tools (12):
   caido_auth_setup, caido_export_curl, caido_replay,
   caido_automate, caido_automate_status
 
-The caido:automate skill is the recipe cookbook for automate workflows
-(strategy/payload decisions, pitfalls, IDOR patterns).
+The caido:caido skill is the agent-operator cookbook — shared-workspace
+guidance, tool map, replay/automate decisions, pitfalls, HTTPQL reference.
+Tool descriptions carry the mechanics; the skill carries the decisions.
 """
 
 CAIDO_ONBOARD = {
@@ -317,7 +318,7 @@ CAIDO_AUTOMATE = {
         "run should be visible in Caido (shared workspace). For high-volume or "
         "headless fuzzing, ffuf is often the better tool: export the request "
         "with caido_export_curl and run ffuf directly. For strategy/payload "
-        "guidance see the caido:automate skill."
+        "guidance see the caido:caido skill."
     ),
     "parameters": {
         "type": "object",
