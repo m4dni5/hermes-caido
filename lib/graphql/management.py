@@ -10,11 +10,11 @@ from .client import graphql
 
 SCOPES_QUERY = """query Scopes { scopes { id name } }"""
 
-GET_SCOPE_QUERY = """query Scope($id: ID!) { scope(id: $id) { id name allow deny } }"""
+GET_SCOPE_QUERY = """query Scope($id: ID!) { scope(id: $id) { id name allowlist denylist } }"""
 
 CREATE_SCOPE_MUTATION = """mutation CreateScope($input: CreateScopeInput!) {
   createScope(input: $input) {
-    error { __typename ... on NameTakenUserError { message } ... on PermissionDeniedUserError { message } ... on OtherUserError { message } }
+    error { __typename ... on InvalidGlobTermsUserError { code } ... on OtherUserError { code } }
     scope { id name }
   }
 }"""
@@ -33,7 +33,7 @@ RENAME_SCOPE_MUTATION = """mutation RenameScope($id: ID!, $name: String!) {
 
 UPDATE_SCOPE_MUTATION = """mutation UpdateScope($id: ID!, $input: UpdateScopeInput!) {
   updateScope(id: $id, input: $input) {
-    error { __typename ... on InvalidGlobTermsUserError { message } ... on OtherUserError { message } }
+    error { __typename ... on InvalidGlobTermsUserError { code } ... on OtherUserError { code } }
     scope { id name allowlist denylist }
   }
 }"""
@@ -45,7 +45,7 @@ FILTERS_QUERY = """query FilterPresets { filterPresets { id name alias clause { 
 
 CREATE_FILTER_MUTATION = """mutation CreateFilterPreset($input: CreateFilterPresetInput!) {
   createFilterPreset(input: $input) {
-    error { __typename ... on NameTakenUserError { message } ... on AliasTakenUserError { message } ... on PermissionDeniedUserError { message } ... on OtherUserError { message } }
+    error { __typename ... on NameTakenUserError { code } ... on AliasTakenUserError { code } ... on PermissionDeniedUserError { code } ... on OtherUserError { code } }
     filter { id name }
   }
 }"""
@@ -62,7 +62,7 @@ query Environments { environments { ...EnvironmentFull } }"""
 
 CREATE_ENVIRONMENT_MUTATION = """mutation CreateEnvironment($input: CreateEnvironmentInput!) {
   createEnvironment(input: $input) {
-    error { __typename ... on NameTakenUserError { message } ... on PermissionDeniedUserError { message } ... on OtherUserError { message } }
+    error { __typename ... on NameTakenUserError { code } ... on PermissionDeniedUserError { code } ... on OtherUserError { code } }
     environment { id name variables { name value kind } version }
   }
 }"""
@@ -70,7 +70,7 @@ CREATE_ENVIRONMENT_MUTATION = """mutation CreateEnvironment($input: CreateEnviro
 DELETE_ENVIRONMENT_MUTATION = """mutation DeleteEnvironment($id: ID!) {
   deleteEnvironment(id: $id) {
     deletedId
-    error { __typename ... on UnknownIdUserError { message } ... on OtherUserError { message } }
+    error { __typename ... on UnknownIdUserError { code } ... on OtherUserError { code } }
   }
 }"""
 
@@ -82,7 +82,7 @@ query Projects { projects { ...ProjectFull } }"""
 
 CREATE_PROJECT_MUTATION = """mutation CreateProject($input: CreateProjectInput!) {
   createProject(input: $input) {
-    error { __typename ... on NameTakenUserError { message } ... on PermissionDeniedUserError { message } ... on OtherUserError { message } }
+    error { __typename ... on NameTakenUserError { code } ... on PermissionDeniedUserError { code } ... on CloudUserError { code } ... on OtherUserError { code } }
     project { id name path status temporary createdAt updatedAt version size readOnly }
   }
 }"""
@@ -90,7 +90,7 @@ CREATE_PROJECT_MUTATION = """mutation CreateProject($input: CreateProjectInput!)
 DELETE_PROJECT_MUTATION = """mutation DeleteProject($id: ID!) {
   deleteProject(id: $id) {
     deletedId
-    error { __typename ... on ProjectUserError { message } ... on UnknownIdUserError { message } ... on OtherUserError { message } }
+    error { __typename ... on ProjectUserError { code } ... on UnknownIdUserError { code } ... on OtherUserError { code } }
   }
 }"""
 
@@ -104,7 +104,7 @@ query Tasks { tasks { ...TaskMeta ... on ReplayTask { ...ReplayTaskMeta } } }"""
 CANCEL_TASK_MUTATION = """mutation cancelTask($id: ID!) {
   cancelTask(id: $id) {
     cancelledId
-    error { __typename ... on UnknownIdUserError { message } ... on OtherUserError { message } }
+    error { __typename ... on UnknownIdUserError { code } ... on OtherUserError { code } }
   }
 }"""
 

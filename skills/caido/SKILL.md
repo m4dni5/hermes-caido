@@ -67,6 +67,35 @@ If a search comes back empty but you expected traffic, check the active scope
 first — the request is probably there but outside it. `caido_onboard` reports
 `active_scope` so you always know the current filter.
 
+## Scope & project lifecycle (via lib/)
+
+Scope and project creation/editing are **not tool surface** — they're lifecycle
+actions the user typically does in the UI. But if the user asks you to create,
+rename, update, or delete a scope or project, **do it — don't push them to the
+UI.** The full CRUD lives in `lib/management.py` (sync wrappers over
+`lib/graphql/management.py`):
+
+```python
+import os, sys
+sys.path.insert(0, os.path.join(os.environ["CAIDO_PLUGIN_DIR"], "lib"))
+import management
+
+management.scopes()                                    # list
+management.get_scope("1")                              # one scope
+management.create_scope("new-target", allow=["*.example.com"])   # create
+management.update_scope("1", allowlist=["*.example.com"], denylist=[])  # edit
+management.rename_scope("1", "renamed")
+management.delete_scope("1")
+
+management.projects()                                  # list
+management.create_project("engagement-42")             # create
+management.delete_project("project-id")
+```
+
+After creating/editing a scope the user wants active, re-run `caido_onboard`
+(or call `set_active_scope` from `lib/http_requests.py`) so search/recent pick
+up the change.
+
 ## Tool Map
 
 Start every Caido session with `caido_onboard` — it returns health, auth,
