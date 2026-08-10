@@ -69,26 +69,24 @@ first — the request is probably there but outside it. `caido_onboard` reports
 
 ## Scope & project lifecycle (via lib/)
 
-Scope and project creation/editing are **not tool surface** — they're lifecycle
-actions the user typically does in the UI. But if the user asks you to create,
-rename, update, or delete a scope or project, **do it — don't push them to the
-UI.** The full CRUD lives in `lib/management.py` (sync wrappers over
-`lib/graphql/management.py`):
+Scope and project creation/editing are **not tool surface** — but if the user
+asks you to create, rename, update, or delete a scope or project, **do it —
+don't push them to the UI.** The full CRUD lives in `lib/management.py`
+(sync wrappers over `lib/graphql/management.py`):
 
 ```python
 import os, sys
 sys.path.insert(0, os.path.join(os.environ["CAIDO_PLUGIN_DIR"], "lib"))
 import management
 
-management.scopes()                                    # list
-management.get_scope("1")                              # one scope
+management.scopes()                                  # list
+management.get_scope("1")                            # one scope by id
 management.create_scope("new-target", allow=["*.example.com"])   # create
 management.update_scope("1", allowlist=["*.example.com"], denylist=[])  # edit
 management.rename_scope("1", "renamed")
 management.delete_scope("1")
-
-management.projects()                                  # list
-management.create_project("engagement-42")             # create
+management.projects()                                # list
+management.create_project("engagement-42")           # create
 management.delete_project("project-id")
 ```
 
@@ -185,10 +183,12 @@ use its byte range as the placeholder. Payloads become bare data — URL
 structure stays baked into the template.
 
 ```python
-# via the tool — simplest
-# caido_automate(request_id="5218", target="id=42", payloads=["1","2","3","admin"], strategy="ALL")
+# via the tool — simplest (one placeholder, one payload list)
+caido_automate(request_id="5218", target="id=42", payloads=["1","2","3","admin"], strategy="ALL")
 
-# via lib/ when you need the full workflow
+# via lib/ only for multi-placeholder / advanced config (MATRIX, PARALLEL,
+# custom placeholders beyond one FUZZ slot). The tool does the single-slot
+# case; go to lib when you need more control.
 import base64
 import automate, placeholders, payloads
 
@@ -269,18 +269,16 @@ handle. If the target is slow, results may show `error/no-response` with a
 9. **Deleting a session with a task fails** — cancel the task first
    (`cancel_task`), then delete the session.
 10. **Completed tasks leave the recent list** — poll with `session_id` (or
-    `entry_id`), not `task_id`, after the run finishes; sessions and entries
-    persist with all results.
+    `entry_id`), not `task_id`, after the run finishes (see "Results" above);
+    sessions and entries persist with all results.
 11. **Replay sessions accumulate entries** — each `startReplayTask` appends a
     new entry to the session's history. Use `caido_replay(session_id=...)`
     to iterate (auth bypass, param tweaks) and keep attempts grouped; the UI
     shows the latest with a History drop-down/arrows for previous ones.
 12. **Replay edits are literal; automate payloads are encoded** — the two
-    tools have opposite defaults. `caido_automate` URL-encodes payloads
-    (url_encode: true); `caido_replay` passes path/method/header/body edits
-    verbatim. A space or quote in a replay path/query edit produces a
-    malformed request line → 400 with empty method/path. Encode replay URL
-    edits yourself; let automate's default handle its payloads.
+    tools have opposite defaults. See "Replay: one-shot vs iteration" above:
+    `caido_replay` passes edits verbatim (encode URL edits yourself),
+    `caido_automate` URL-encodes payloads by default.
 
 ## HTTPQL Quick Reference (for caido_search / result filtering)
 
