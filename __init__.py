@@ -1,14 +1,14 @@
 """Hermes Agent Caido plugin — registration.
 
-Registers hot-path tools for interacting with the Caido HTTP proxy:
-onboard, search, recent, get, findings, create_finding, health.
+Registers tools for interacting with the Caido HTTP proxy:
+onboard, search, recent, get, findings, create_finding, health,
+auth_setup, export_curl, replay, automate, automate_status.
 
-All other operations (replay, session management, findings CRUD,
-export curl, scopes, filters, envs, projects, auth setup) are accessed via
-bundled skills:
-  - caido:replay  — session management, edit-and-replay
-  - caido:utils   — auth setup, findings, export curl, scopes, filters, envs, projects
-  - caido:automate — session CRUD, placeholders, payloads, task control
+Design (tool-search era): every operation an agent-operator performs is a
+registered tool. Tool descriptions carry the decisions; one recipe skill
+(caido:automate) holds the automate strategy/payload cookbook. Advanced
+config (scopes, filters, envs, projects, raw session CRUD) stays in the
+lib/ layer, callable via execute_code.
 
 No external SDK dependency — uses raw GraphQL via aiohttp.
 """
@@ -24,21 +24,29 @@ logger = logging.getLogger(__name__)
 
 
 def register(ctx) -> None:  # noqa: ANN001 — plugin context type
-    """Register hot-path Caido tools with the Hermes tool registry."""
+    """Register Caido tools with the Hermes tool registry."""
     # Expose plugin path for skills and auth helper — works under any profile
     import os
     plugin_path = ctx.manifest.path or str(Path(__file__).parent)
     os.environ["CAIDO_PLUGIN_DIR"] = plugin_path
 
     _tools = [
-        # Hot path — always available, schema-guided
+        # Orientation & health
         ("caido_onboard",        schemas.CAIDO_ONBOARD,        tools.handle_onboard,        "Connect and gather full Caido context"),
+        ("caido_health",         schemas.CAIDO_HEALTH,         tools.handle_health,         "Check Caido health"),
+        # Proxy history
         ("caido_search",         schemas.CAIDO_SEARCH,         tools.handle_search,         "Search proxy history with HTTPQL"),
         ("caido_recent",         schemas.CAIDO_RECENT,         tools.handle_recent,         "Get recent intercepted requests"),
-        ("caido_get",            schemas.CAIDO_GET,            tools.handle_get,            "Get request/response by ID"),
+        ("caido_get",            schemas.CAIDO_GET,            tools.handle_get,            "Get request/response by ID (Request.id or UI number)"),
+        # Findings
         ("caido_findings",       schemas.CAIDO_FINDINGS,       tools.handle_findings,       "List security findings"),
         ("caido_create_finding", schemas.CAIDO_CREATE_FINDING, tools.handle_create_finding, "Create a security finding"),
-        ("caido_health",         schemas.CAIDO_HEALTH,         tools.handle_health,         "Check Caido health"),
+        # Operations
+        ("caido_replay",         schemas.CAIDO_REPLAY,         tools.handle_replay,         "Replay a request, optionally edited"),
+        ("caido_automate",       schemas.CAIDO_AUTOMATE,       tools.handle_automate,       "Run an automate campaign"),
+        ("caido_automate_status", schemas.CAIDO_AUTOMATE_STATUS, tools.handle_automate_status, "Poll automate task status"),
+        ("caido_export_curl",    schemas.CAIDO_EXPORT_CURL,    tools.handle_export_curl,    "Export request as curl command"),
+        ("caido_auth_setup",     schemas.CAIDO_AUTH_SETUP,     tools.handle_auth_setup,     "Run device-code auth flow"),
     ]
 
     for name, schema, handler, description in _tools:
@@ -52,9 +60,9 @@ def register(ctx) -> None:  # noqa: ANN001 — plugin context type
         )
         logger.debug("Registered tool: %s", name)
 
-    # Bundle skills
+    # Bundle skills — one recipe cookbook
     skills_dir = Path(__file__).parent / "skills"
-    for skill_name in ("replay", "utils", "automate"):
+    for skill_name in ("automate",):
         skill_path = skills_dir / skill_name / "SKILL.md"
         if skill_path.exists():
             ctx.register_skill(skill_name, skill_path)
@@ -62,4 +70,4 @@ def register(ctx) -> None:  # noqa: ANN001 — plugin context type
         else:
             logger.warning("Skill file not found: %s", skill_path)
 
-    logger.info("Caido plugin loaded — %d tools, 3 skills", len(_tools))
+    logger.info("Caido plugin loaded — %d tools, 1 skill", len(_tools))

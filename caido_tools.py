@@ -168,7 +168,7 @@ async def handle_health(args: dict, **kwargs) -> str:
         if result.get("status") != "ok":
             result["message"] = (
                 "Caido instance is not healthy. Check that it is running. "
-                "Load the caido:utils skill and run auth.setup() if this is an auth issue."
+                "Run caido_auth_setup if this is an auth issue."
             )
         return json.dumps(result, indent=2)
     except Exception as e:
@@ -176,10 +176,167 @@ async def handle_health(args: dict, **kwargs) -> str:
             "status": "error",
             "error": str(e),
             "message": (
-                "Health check failed. Load the caido:utils skill and run auth.setup() "
+                "Health check failed. Run caido_auth_setup "
                 "to configure credentials, or check that the Caido instance is running."
             ),
         }, indent=2)
+
+
+async def handle_auth_setup(args: dict, **kwargs) -> str:
+    """Run the device-code auth flow in an isolated subprocess."""
+    try:
+        pat = args.get("pat") or os.environ.get("CAIDO_PAT") or ""
+        url = args.get("url") or os.environ.get("CAIDO_URL") or ""
+        if not pat or not url:
+            return json.dumps({
+                "error": "PAT and URL are required for auth setup. Pass them explicitly, "
+                         "or set CAIDO_PAT / CAIDO_URL in the environment.",
+                "message": "Run caido_auth_setup to configure credentials.",
+            }, indent=2)
+        result = await _setup_via_subprocess(pat=pat, url=url)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, indent=2)
+
+
+async def handle_export_curl(args: dict, **kwargs) -> str:
+    try:
+        data = await export_curl(request_id=args["request_id"])
+        return json.dumps(data, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, indent=2)
+
+
+async def handle_replay(args: dict, **kwargs) -> str:
+    try:
+        from graphql.replay import replay as replay_request, replay_with_edit
+
+        request_id = args["request_id"]
+        has_edits = any(k in args for k in ("path", "method", "headers", "body"))
+        if has_edits:
+            result = await replay_with_edit(
+                request_id=request_id,
+                path=args.get("path"),
+                method=args.get("method"),
+                headers=args.get("headers"),
+                body=args.get("body"),
+                session_name=args.get("session_name"),
+            )
+        else:
+            result = await replay_request(request_id=request_id)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, indent=2)
+
+
+async def handle_automate(args: dict, **kwargs) -> str:
+    """One-call automate orchestration: source + target + payloads → running task."""
+    try:
+        from graphql.automate import (
+            create_session as automate_create_session,
+            rename_session as automate_rename_session,
+            update_session as automate_update_session,
+            start_task as automate_start_task,
+        )
+        from graphql.http_requests import get as get_request
+        from placeholders import find_value
+        from payloads import build_payload_input, validate_payload_config
+
+        request_id = args["request_id"]
+        target = args["target"]
+        payloads = args.get("payloads", [])
+        strategy = args.get("strategy", "ALL")
+        session_name = args.get("session_name")
+
+        if not payloads:
+            return json.dumps({"error": "payloads must be a non-empty list"}, indent=2)
+
+        # 1. Fetch the source request (get() resolves UI metadata ids too)
+        req = await get_request(request_id=request_id)
+        if "error" in req:
+            return json.dumps(req, indent=2)
+        raw = req.get("requestRaw", "")
+        if not raw:
+            return json.dumps({"error": f"Request {request_id!r} has no raw bytes"}, indent=2)
+
+        # 2. Embed the FUZZ slot
+        if target not in raw:
+            return json.dumps({
+                "error": f"Target {target!r} not found in raw request. "
+                         f"The value must appear literally in the request (path, query, headers, or body).",
+            }, indent=2)
+        template = raw.replace(target, "FUZZ", 1)
+
+        # 3. Locate the placeholder byte range
+        ranges = find_value(template, "FUZZ")
+        if not ranges:
+            return json.dumps({"error": "FUZZ placeholder not found after substitution"}, indent=2)
+
+        # 4. Validate payload config against strategy (1 placeholder for ALL/SEQUENTIAL)
+        try:
+            validate_payload_config(strategy, num_placeholders=1, payload_sets=[payloads])
+        except Exception as e:
+            return json.dumps({"error": f"Payload config invalid: {e}"}, indent=2)
+
+        # 5. Create the automate session seeded from the request
+        session = await automate_create_session(request_id=request_id)
+        if "error" in session:
+            return json.dumps(session, indent=2)
+        session_id = session["id"]
+        if session_name:
+            rename = await automate_rename_session(session_id, session_name)
+            if "error" in rename:
+                return json.dumps(rename, indent=2)
+
+        # 6. Configure raw + placeholder + payloads + strategy
+        connection = {
+            "host": req.get("host", ""),
+            "port": req.get("port", 443),
+            "isTLS": req.get("isTls", True),
+        }
+        settings = {
+            "placeholders": ranges,
+            "payloads": build_payload_input([payloads]),
+            "strategy": strategy,
+        }
+        updated = await automate_update_session(
+            session_id,
+            raw=template,
+            connection=connection,
+            settings=settings,
+        )
+        if "error" in updated:
+            return json.dumps(updated, indent=2)
+
+        # 7. Start the task
+        task = await automate_start_task(session_id)
+        if "error" in task:
+            return json.dumps(task, indent=2)
+
+        return json.dumps({
+            "session_id": session_id,
+            "task_id": task.get("taskId"),
+            "entry_id": task.get("entryId"),
+            "strategy": strategy,
+            "placeholder": ranges,
+            "status": "started",
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, indent=2)
+
+
+async def handle_automate_status(args: dict, **kwargs) -> str:
+    try:
+        from graphql.automate import list_tasks as automate_list_tasks
+
+        task_id = args["task_id"]
+        tasks = await automate_list_tasks(limit=100)
+        for t in tasks:
+            if t.get("id") == task_id:
+                return json.dumps(t, indent=2)
+        return json.dumps({"task_id": task_id, "status": "not_found"}, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, indent=2)
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +375,7 @@ async def handle_onboard(args: dict, **kwargs) -> str:
                 "health": {"status": "unreachable"},
                 "message": (
                     "Cannot reach Caido instance. Check that it is running and the URL is correct. "
-                    "Load the caido:utils skill and run auth.setup() to configure credentials."
+                    "Run caido_auth_setup to configure credentials."
                 ),
             }, indent=2)
 
@@ -237,7 +394,7 @@ async def handle_onboard(args: dict, **kwargs) -> str:
                 "health": {"status": "ok"},
                 "auth": {"authenticated": False, "error": auth_error},
                 "message": (
-                    "Not authenticated. Load the caido:utils skill and run auth.setup() "
+                    "Not authenticated. Run caido_auth_setup "
                     "to configure credentials."
                 ),
             }, indent=2)
@@ -322,6 +479,6 @@ async def handle_onboard(args: dict, **kwargs) -> str:
         result = {"error": error_str}
         if any(kw in error_str.lower() for kw in ["auth", "token", "pat", "401", "403", "forbidden"]):
             result["message"] = (
-                "Load the caido:utils skill and run auth.setup() to configure credentials."
+                "Run caido_auth_setup to configure credentials."
             )
         return json.dumps(result, indent=2)

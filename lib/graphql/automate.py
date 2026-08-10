@@ -1,6 +1,6 @@
 """Automate operations via raw GraphQL.
 
-Session CRUD and task management for Caido's Automate (fuzzer).
+Session CRUD and task management for Caido's Automate.
 Matches the real Caido GraphQL schema.
 
 Workflow:
@@ -268,6 +268,8 @@ async def create_session(request_id: str | None = None, client=None) -> dict:
 
     Args:
         request_id: Optional proxy request ID to seed the session from.
+            Accepts both the GraphQL ``Request.id`` and the UI-visible
+            ``metadata.id`` (a number quoted from the Caido history table).
 
     Returns:
         Dict with ``id``, ``name`` (or ``error``).
@@ -275,7 +277,12 @@ async def create_session(request_id: str | None = None, client=None) -> dict:
     try:
         input_vars: dict[str, Any] = {}
         if request_id:
-            input_vars["requestSource"] = {"id": request_id}
+            from .http_requests import resolve_request_id as _resolve
+
+            resolved = await _resolve(request_id, client=client)
+            if isinstance(resolved, dict) and "error" in resolved:
+                return resolved
+            input_vars["requestSource"] = {"id": resolved.get("id", request_id)}
         data = await graphql(_CREATE_AUTOMATE_SESSION, {"input": input_vars})
         result = data.get("createAutomateSession", {})
         session = result.get("session", {})
@@ -299,6 +306,25 @@ async def rename_session(session_id: str, name: str, client=None) -> dict:
         return {"error": str(exc)}
 
 
+_SETTINGS_DEFAULTS: dict[str, Any] = {
+    # AutomateSettingsInput requires every field; fill safe defaults for the
+    # ones callers typically don't set (see schema AutomateSettingsInput).
+    "closeConnection": False,
+    "concurrency": {"workers": 1, "delay": 0},
+    "extractors": [],
+    "redirect": {"strategy": "NEVER", "max": 0},
+    "retryOnFailure": {"backoff": 0, "maximumRetries": 0},
+    "updateContentLength": True,
+}
+
+
+def _complete_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    """Return settings with required AutomateSettingsInput fields filled."""
+    merged = dict(_SETTINGS_DEFAULTS)
+    merged.update(settings or {})
+    return merged
+
+
 async def update_session(
     session_id: str,
     raw: str | None = None,
@@ -313,6 +339,8 @@ async def update_session(
         raw: New raw HTTP request (will be base64-encoded).
         connection: ConnectionInfoInput dict {host, port, isTLS, SNI?}.
         settings: AutomateSettingsInput dict with placeholders, payloads, etc.
+            Missing required fields (closeConnection, concurrency, extractors,
+            redirect, retryOnFailure, updateContentLength) get safe defaults.
 
     Returns:
         Dict with ``id``, ``name`` (or ``error``).
@@ -325,7 +353,7 @@ async def update_session(
         if connection is not None:
             input_vars["connection"] = connection
         if settings is not None:
-            input_vars["settings"] = settings
+            input_vars["settings"] = _complete_settings(settings)
         if not input_vars:
             return {"error": "No fields to update"}
         data = await graphql(_UPDATE_AUTOMATE_SESSION, {"id": session_id, "input": input_vars})

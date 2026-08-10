@@ -425,17 +425,36 @@ async def replay(request_id: str, client=None) -> dict:
 
     v0.57.0 workflow: create session with requestSource.id, then start task.
 
+    Accepts both the GraphQL ``Request.id`` and the UI-visible ``metadata.id``
+    (a number quoted from the Caido history table).
+
     Returns:
         Dict with ``status``, ``sessionId``, ``taskId`` (or ``error``).
     """
     try:
-        session_result = await create_session(request_id=request_id)
+        canonical_id = await _resolve_source_id(request_id, client=client)
+        if isinstance(canonical_id, dict):  # error dict
+            return canonical_id
+        session_result = await create_session(request_id=canonical_id, client=client)
         if "error" in session_result:
             return session_result
         session_id = session_result["id"]
-        return await start_replay_task(session_id)
+        return await start_replay_task(session_id, client=client)
     except Exception as exc:
         return {"error": str(exc)}
+
+
+async def _resolve_source_id(request_id: str, client=None) -> str | dict:
+    """Resolve a possibly-UI metadata.id to the canonical Request.id.
+
+    Returns the canonical id string, or an ``{"error": ...}`` dict on failure.
+    """
+    from .http_requests import resolve_request_id as _resolve
+
+    resolved = await _resolve(request_id, client=client)
+    if isinstance(resolved, dict) and "error" in resolved:
+        return resolved
+    return resolved.get("id", request_id)
 
 
 async def replay_with_edit(
@@ -466,8 +485,13 @@ async def replay_with_edit(
     try:
         from .http_requests import get as get_request
 
-        # Step 1: Fetch the request
-        req = await get_request(request_id=request_id)
+        # Step 1: Resolve a possibly-UI metadata.id to the canonical Request.id,
+        # then fetch the request (get() also resolves, but we need the canonical
+        # id for create_session's requestSource.id).
+        canonical_id = await _resolve_source_id(request_id, client=client)
+        if isinstance(canonical_id, dict):  # error dict
+            return canonical_id
+        req = await get_request(request_id=canonical_id, client=client)
         if "error" in req:
             return req
 
@@ -529,8 +553,9 @@ async def replay_with_edit(
 
         # Step 3: Create session from original request
         session = await create_session(
-            name=session_name or f"edit-{request_id}",
-            request_id=request_id,
+            name=session_name or f"edit-{canonical_id}",
+            request_id=canonical_id,
+            client=client,
         )
         if "error" in session:
             return session
@@ -538,7 +563,7 @@ async def replay_with_edit(
         session_id = session["id"]
 
         # Step 4: Get entry ID
-        entries = await get_session_entries(session_id)
+        entries = await get_session_entries(session_id, client=client)
         if not entries or "error" in entries[0]:
             return {"error": "Failed to get session entries"}
 
@@ -551,12 +576,13 @@ async def replay_with_edit(
             host=host,
             port=port,
             is_tls=is_tls,
+            client=client,
         )
         if "error" in draft_result:
             return draft_result
 
         # Step 6: Start replay
-        replay_result = await start_replay_task(session_id)
+        replay_result = await start_replay_task(session_id, client=client)
         if "error" in replay_result:
             return replay_result
 

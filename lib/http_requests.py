@@ -15,6 +15,7 @@ from graphql.http_requests import (
     get as _get,
     get_response as _get_response,
     export_curl as _export_curl,
+    resolve_request_id as _resolve_request_id,
     set_active_scope as _set_active_scope,
     get_active_scope as _get_active_scope,
 )
@@ -46,8 +47,13 @@ def get_response(request_id: str) -> dict:
 
 
 def export_curl(request_id: str) -> dict:
-    """Export request as curl command."""
+    """Export request as curl command. Accepts Request.id or UI metadata.id."""
     return sync_run(_export_curl, request_id=request_id)
+
+
+def resolve_request_id(request_id: str) -> dict:
+    """Resolve a UI-visible metadata.id to the canonical Request.id."""
+    return sync_run(_resolve_request_id, request_id=request_id)
 
 
 def set_active_scope(scope_id: str | None) -> None:

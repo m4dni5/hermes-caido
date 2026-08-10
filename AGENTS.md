@@ -1,19 +1,19 @@
 # AGENTS.md — hermes-caido
 
-A Hermes Agent plugin for the [Caido](https://caido.io) HTTP proxy. Enables AI agents to search proxy history, manage findings, replay requests, and run fuzzing campaigns against live targets.
+A Hermes Agent plugin for the [Caido](https://caido.io) HTTP proxy. Enables AI agents to search proxy history, manage findings, replay requests, and run automate campaigns against live targets.
 
 ## Architecture
 
 ```
 hermes-caido/
-├── __init__.py              # Plugin registration — tools + skills
+├── __init__.py              # Plugin registration — 12 tools + 1 skill
 ├── plugin.yaml              # Plugin metadata (name, version, env vars)
 ├── schemas.py               # JSON Schema for registered tools
 ├── caido_tools.py           # Async tool handlers (called by Hermes)
 ├── auth_helper.py           # Standalone auth flow (subprocess isolation)
 ├── lib/
 │   ├── sync.py              # sync_run() helper — asyncio.run() + close()
-│   ├── http_requests.py     # Sync wrappers: search, recent, get, export_curl
+│   ├── http_requests.py     # Sync wrappers: search, recent, get, export_curl, resolve_request_id
 │   ├── findings.py          # Sync wrappers: list, get, create, update
 │   ├── replay.py            # Sync wrappers: sessions, entries, replay
 │   ├── management.py        # Sync wrappers: scopes, filters, envs, projects
@@ -23,16 +23,14 @@ hermes-caido/
 │   ├── payloads.py          # Payload validation: strategy-aware, simpleList/number builders
 │   └── graphql/
 │       ├── client.py        # Core: aiohttp singleton, GraphQL transport, OAuth2 device flow
-│       ├── http_requests.py # Async: search, recent, get, export_curl
+│       ├── http_requests.py # Async: search, recent, get, export_curl, ID resolver
 │       ├── findings.py      # Async: findings CRUD
 │       ├── replay.py        # Async: replay sessions/entries
 │       ├── management.py    # Async: scopes, filters, envs, projects, hosted_files
 │       ├── automate.py      # Async: automate sessions/tasks, update_session
 │       └── auth.py          # Async: auth_status, setup, clear_cache, test_connection
 └── skills/
-    ├── replay/SKILL.md      # Session management, edit-and-replay, curl-through-proxy guidance
-    ├── utils/SKILL.md       # Auth setup, findings CRUD, scopes, filters, envs, projects
-    └── automate/SKILL.md    # FUZZ slot pattern, placeholders, payloads, task control
+    └── automate/SKILL.md    # Recipe cookbook: strategy × payloads, FUZZ slot, pitfalls, patterns
 ```
 
 ## Two-Layer Design
@@ -46,20 +44,32 @@ Skills call the sync wrappers in `execute_code` blocks. Tool handlers in `caido_
 
 ## Key Design Decisions
 
-### Skill-first for complex operations
-Tools are for high-frequency, single-call operations (search, get, recent). Everything else lives in skills loaded on demand. This keeps the agent's context lean — the skill only loads when needed.
+### Tool-first (tool-search era)
+Hermes uses progressive tool disclosure: all non-core tools sit behind
+`tool_search`/`tool_describe`/`tool_call`, and schemas load on demand. The
+context-cost rationale for hiding operations in skills is gone — every
+operation an agent-operator performs is a registered tool (12 total), and
+descriptions carry the decisions. The one remaining skill (`caido:automate`)
+is a recipe cookbook for automate *strategy*, which doesn't fit a tool schema.
 
 ### Auth runs in a subprocess
-The Hermes agent's async context interferes with aiohttp WebSocket connections (inherited SSL state, nested event loops). The auth flow runs in `auth_helper.py` as a fresh process. The `caido_onboard` tool handles the happy path; auth setup/troubleshooting lives in the `caido:utils` skill.
+The Hermes agent's async context interferes with aiohttp WebSocket connections (inherited SSL state, nested event loops). The auth flow runs in `auth_helper.py` as a fresh process. The `caido_onboard` tool handles the happy path; `caido_auth_setup` handles auth setup/troubleshooting as a tool.
 
 ### All instances require authentication
-Every Caido instance requires an access token — including local ones at `127.0.0.1:8080`. The client tries, in order: cached token → token refresh → full device code flow (PAT from `CAIDO_PAT` env/`.env`). There is no guest mode; an unauthenticated `requests` query returns `INVALID_TOKEN`. On auth failure, the tool guidance directs the agent to load `caido:utils` and run `auth.setup()`.
+Every Caido instance requires an access token — including local ones at `127.0.0.1:8080`. The client tries, in order: cached token → token refresh → full device code flow (PAT from `CAIDO_PAT` env/`.env`). There is no guest mode; an unauthenticated `requests` query returns `INVALID_TOKEN`. On auth failure, the tool guidance directs the agent to run `caido_auth_setup`.
 
 ### Auth error guidance
-All error paths in tool handlers and the client layer include explicit guidance: **"Load the caido:utils skill and run auth.setup()"**. The agent should follow this instruction whenever a Caido tool returns an auth-related error.
+All error paths in tool handlers and the client layer include explicit guidance: **"Run caido_auth_setup"**. The agent should follow this instruction whenever a Caido tool returns an auth-related error.
 
 ### No external SDK dependency (for now)
-We use raw GraphQL strings against Caido's v0.57.0 schema. The official Python SDK (`caido-sdk-client`) is on 0.56.0 and lacks automate support. When the SDK catches up, we'll swap the GraphQL layer. The skill interface is the stable contract.
+We use raw GraphQL strings against Caido's v0.57.x schema. The community SDK (`caido-sdk-client`) is on 0.3.0 / schema proxy 0.57.1 but requires Python ≥ 3.12 (Hermes venv is 3.11) and lacks Automate session support. When the SDK catches up, we'll swap the GraphQL layer. The tool/skill interface is the stable contract.
+
+### ID namespace resolution (UI numbers)
+The Caido UI history table shows `metadata.id` (a group key), which differs from
+the GraphQL `Request.id`. `lib/graphql/http_requests.py` has a resolver that
+tries `request(id:)` and falls back to a `requestsByOffset` scan by
+`metadata.id`. `caido_get`, `caido_replay`, `caido_automate`, and
+`caido_export_curl` accept both namespaces automatically.
 
 ### FUZZ slot pattern for placeholders
 Modify the raw request to embed `FUZZ` at the target location, then call `find_value(template, "FUZZ")` to get byte ranges. Payloads are bare data (`admin`, not `http://127.0.0.1/admin`). No preprocessors needed.
@@ -112,7 +122,7 @@ python3 -m py_compile caido_tools.py
 
 5. **`interceptOptions.scope.scopeId` is intercept-only** — Caido doesn't expose "active scope for proxy history" via GraphQL. Scopes are per-mode in the UI (intercept/filter/history).
 
-6. **URL-encode payload values when fuzzing inside URLs** — Caido's hosted file payloads don't auto-encode. Use the `urlEncode` preprocessor or pre-encode your wordlist. `${IFS}` bypasses space restrictions in shell commands passed through SSRF.
+6. **URL-encode payload values when automating inside URLs** — Caido's hosted file payloads don't auto-encode. Use the `urlEncode` preprocessor or pre-encode your wordlist. `${IFS}` bypasses space restrictions in shell commands passed through SSRF.
 
 7. **Gopher/file/dict protocols disabled on many targets** — SSRF exploitation often requires HTTP-only approaches. Check what the server's libcurl supports.
 
@@ -121,9 +131,9 @@ python3 -m py_compile caido_tools.py
 - **Plugin path:** `CAIDO_PLUGIN_DIR` env var (set automatically during registration, works under any profile)
 - **Hermes home:** `HERMES_HOME` env var if set (profile-aware), otherwise `~/.hermes/`
 - **Token cache:** `<hermes_home>/cache/caido-token.json`
-- **Caido URL/PAT:** `<hermes_home>/.env` or env vars `CAIDO_URL` / `CAIDO_PAT` (PAT not needed for local instances at `127.0.0.1:8080`)
+- **Caido URL/PAT:** `<hermes_home>/.env` or env vars `CAIDO_URL` / `CAIDO_PAT` (required — all instances, including local, require auth)
 - **Python executable:** `sys.executable` (same Python running the plugin)
-- **Caido schema version:** 0.57.0
+- **Caido schema version:** 0.57.x
 
 Skills import the library via:
 ```python
@@ -135,6 +145,6 @@ sys.path.insert(0, os.path.join(os.environ["CAIDO_PLUGIN_DIR"], "lib"))
 
 See `TODO.md` for:
 - Packaging with `pyproject.toml` + `pip install -e .`
-- SDK migration when `caido-sdk-client` >= 0.57.0 + automate
-- Automate phases 4–5 (result retrieval, fuzzing patterns)
-- `caido:intercept` skill
+- SDK migration when `caido-sdk-client` >= 3.12-compatible + automate support
+- Automate phases 4–5 (result retrieval, automate patterns)
+- Tool-search discoverability verification after the tool conversion

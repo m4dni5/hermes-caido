@@ -119,6 +119,22 @@ query Request(
   request(id: $id) {{ ...RequestFull }}
 }}"""
 
+# Lightweight lookup that carries both ID namespaces — used by the resolver.
+_GET_REQUEST_WITH_METADATA = """\
+query RequestWithMetadata($id: ID!) {
+  request(id: $id) { id metadata { id } host method path }
+}
+"""
+
+# The query the Caido UI history table is built on. Pages in ID ASC order.
+_REQUESTS_BY_OFFSET = """\
+query RequestsByOffset($offset: Int, $limit: Int) {
+  requestsByOffset(offset: $offset, limit: $limit) {
+    nodes { id metadata { id } host method path }
+  }
+}
+"""
+
 # ---------------------------------------------------------------------------
 # Sort-field mapping (CLI camelCase names → GraphQL enum values)
 # ---------------------------------------------------------------------------
@@ -196,6 +212,120 @@ def _compact_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "length":        entry["length"],
         "metadata":      entry["metadata"],
     }
+
+
+# ---------------------------------------------------------------------------
+# ID namespace resolution (Request.id vs UI-visible metadata.id)
+# ---------------------------------------------------------------------------
+
+_METADATA_SCAN_PAGE = 400
+_METADATA_SCAN_MAX_PAGES = 30
+
+
+async def _scan_by_metadata(metadata_id: str, client: Any = None) -> list[dict[str, Any]]:
+    """Page requestsByOffset (ID ASC) and collect nodes whose metadata.id matches.
+
+    Returns a list of lightweight node dicts (id, metadata, host, method, path).
+    Metadata ids are allocated per request-group and are NOT strictly monotonic
+    in Request.id order, so we scan the full bounded window rather than
+    early-terminating. We can still skip the prefix: a group counter never
+    overtakes the request counter, so a node with metadata.id M always has
+    Request.id >= M — start the scan at offset M.
+    """
+    gql = client or graphql
+    try:
+        start = max(0, int(metadata_id) - 1)
+    except (TypeError, ValueError):
+        start = 0
+    hits: list[dict[str, Any]] = []
+    for page in range(_METADATA_SCAN_MAX_PAGES):
+        offset = start + page * _METADATA_SCAN_PAGE
+        data = await gql(
+            _REQUESTS_BY_OFFSET,
+            {"offset": offset, "limit": _METADATA_SCAN_PAGE},
+        )
+        nodes = data.get("requestsByOffset", {}).get("nodes", [])
+        if not nodes:
+            break
+        for node in nodes:
+            if node.get("metadata", {}).get("id") == metadata_id:
+                hits.append(node)
+    return hits
+
+
+async def _fetch_full(canonical_id: str, client: Any = None) -> dict[str, Any]:
+    """Fetch the full mapped node (raw bytes included) for a canonical Request.id."""
+    gql = client or graphql
+    data = await gql(
+        _GET_REQUEST,
+        {
+            "id": canonical_id,
+            "includeRequestRaw": True,
+            "includeResponseRaw": True,
+        },
+    )
+    node = data.get("request")
+    if node is None:
+        return {"error": f"Request {canonical_id!r} not found"}
+    return _map_node(node)
+
+
+async def resolve_request_id(request_id: str, client: Any = None) -> dict[str, Any]:
+    """Resolve a user-quoted ID to the canonical Request.id.
+
+    Caido's UI history table displays ``metadata.id`` (a group key), while the
+    GraphQL ``request(id:)`` lookup uses ``Request.id``. A number quoted from
+    the UI therefore resolves to the wrong request if passed straight through.
+
+    Strategy:
+      1. Try ``request(id:)`` directly — accept it only when the returned
+         request's own ``metadata.id == requested`` (true fast-path hit).
+      2. Otherwise scan ``requestsByOffset`` for nodes whose ``metadata.id ==
+         requested`` (the UI-number case). Return the first hit, or the direct
+         node as a fallback when nothing matches by metadata.
+
+    Returns a plain dict (mapped node) or ``{"error": ...}``.
+    """
+    gql = client or graphql
+    try:
+        data = await gql(_GET_REQUEST_WITH_METADATA, {"id": request_id})
+        direct = data.get("request")
+    except Exception as exc:
+        return {"error": str(exc)}
+
+    if direct:
+        direct_meta = (direct.get("metadata") or {}).get("id")
+        if direct_meta == request_id:
+            return direct
+
+    # UI-number case: scan for a node carrying this metadata.id.
+    hits = await _scan_by_metadata(request_id, client=gql)
+    if hits:
+        # Fetch the full mapped node for the first match.
+        first = hits[0]
+        full = await _fetch_full(first.get("id", ""), client=gql)
+        if isinstance(full, dict) and "error" not in full:
+            full["metadata_id"] = request_id
+            if len(hits) > 1:
+                full["metadata_matches"] = [
+                    {"id": n.get("id"), "host": n.get("host"), "method": n.get("method"), "path": n.get("path")}
+                    for n in hits
+                ]
+            # If the same number is also a valid Request.id of a different
+            # request, surface that so the agent can disambiguate.
+            if direct and direct.get("id") != first.get("id"):
+                full["direct_match"] = {
+                    "id": direct.get("id"),
+                    "host": direct.get("host"),
+                    "method": direct.get("method"),
+                    "path": direct.get("path"),
+                    "note": "Also a valid Request.id — the metadata interpretation was chosen.",
+                }
+            return full
+
+    if direct:
+        return direct
+    return {"error": f"Request {request_id!r} not found"}
 
 
 # ---------------------------------------------------------------------------
@@ -279,13 +409,29 @@ async def get(
     request_id: str,
     client: Any | None = None,
 ) -> dict[str, Any]:
-    """Fetch a single request by ID with full details (including raw bytes)."""
+    """Fetch a single request by ID with full details (including raw bytes).
+
+    Accepts both the GraphQL ``Request.id`` and the UI-visible ``metadata.id``
+    (a number quoted from the Caido history table). Resolves metadata ids via
+    a requestsByOffset scan before fetching.
+    """
     try:
         gql = client or graphql
+
+        # Resolve UI-visible metadata ids to the canonical Request.id.
+        resolved = await resolve_request_id(request_id, client=gql)
+        if isinstance(resolved, dict) and "error" in resolved:
+            return resolved
+
+        # The resolver already fetched full bytes when it scanned by metadata.
+        if resolved.get("requestRaw") is not None:
+            return resolved
+        canonical_id = resolved.get("id", request_id)
+
         data = await gql(
             _GET_REQUEST,
             {
-                "id": request_id,
+                "id": canonical_id,
                 "includeRequestRaw": True,
                 "includeResponseRaw": True,
             },
@@ -293,7 +439,13 @@ async def get(
         node = data.get("request")
         if node is None:
             return {"error": f"Request {request_id!r} not found"}
-        return _map_node(node)
+        result = _map_node(node)
+        # Surface the UI number when we resolved through the metadata namespace.
+        if resolved.get("metadata_id"):
+            result["metadata_id"] = resolved["metadata_id"]
+        if resolved.get("metadata_matches"):
+            result["metadata_matches"] = resolved["metadata_matches"]
+        return result
     except Exception as exc:
         return {"error": str(exc)}
 
@@ -302,13 +454,21 @@ async def get_response(
     request_id: str,
     client: Any | None = None,
 ) -> dict[str, Any]:
-    """Fetch a request and return only the response portion."""
+    """Fetch a request and return only the response portion.
+
+    Accepts both the GraphQL ``Request.id`` and the UI-visible ``metadata.id``.
+    """
     try:
         gql = client or graphql
+        resolved = await resolve_request_id(request_id, client=gql)
+        if isinstance(resolved, dict) and "error" in resolved:
+            return resolved
+        canonical_id = resolved.get("id", request_id)
+
         data = await gql(
             _GET_REQUEST,
             {
-                "id": request_id,
+                "id": canonical_id,
                 "includeRequestRaw": True,
                 "includeResponseRaw": True,
             },
@@ -318,7 +478,7 @@ async def get_response(
             return {"error": f"Request {request_id!r} not found"}
         entry = _map_node(node)
         resp = (node.get("response") or {})
-        return {
+        result = {
             "id":            entry["id"],
             "statusCode":    entry["statusCode"],
             "roundtripTime": entry["roundtripTime"],
@@ -330,6 +490,9 @@ async def get_response(
             "port":          entry["port"],
             "isTls":         entry["isTls"],
         }
+        if resolved.get("metadata_id"):
+            result["metadata_id"] = resolved["metadata_id"]
+        return result
     except Exception as exc:
         return {"error": str(exc)}
 
@@ -343,15 +506,22 @@ async def export_curl(
     Parses the raw HTTP request to extract the method, headers, path, and body,
     then constructs a curl command string.
 
+    Accepts both the GraphQL ``Request.id`` and the UI-visible ``metadata.id``.
+
     Returns ``{"curl": "curl -X GET ..."}`` on success,
     or ``{"error": "..."}`` on failure.
     """
     try:
         gql = client or graphql
+        resolved = await resolve_request_id(request_id, client=gql)
+        if isinstance(resolved, dict) and "error" in resolved:
+            return resolved
+        canonical_id = resolved.get("id", request_id)
+
         data = await gql(
             _GET_REQUEST,
             {
-                "id": request_id,
+                "id": canonical_id,
                 "includeRequestRaw": True,
                 "includeResponseRaw": False,
             },

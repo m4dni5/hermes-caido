@@ -125,7 +125,7 @@ def _resolve_pat() -> str:
     if not pat:
         raise RuntimeError(
             f"Missing CAIDO_PAT. Set as env var or in {_HERMES_ENV}. "
-            "Load the caido:utils skill and run auth.setup() to configure credentials."
+            "Run caido_auth_setup to configure credentials."
         )
     return pat
 

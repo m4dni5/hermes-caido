@@ -1,18 +1,21 @@
 name: caido
-version: 0.5.0
-description: Caido HTTP proxy integration — onboard, search requests, manage findings. Replay, automate, and advanced operations via bundled skills.
+version: 0.6.0
+description: Caido HTTP proxy integration — onboard, search, replay, automate campaigns, findings, export curl, auth setup.
 author: matt
 provides_tools:
   - caido_onboard
+  - caido_health
   - caido_search
   - caido_recent
   - caido_get
   - caido_findings
   - caido_create_finding
-  - caido_health
+  - caido_replay
+  - caido_automate
+  - caido_automate_status
+  - caido_export_curl
+  - caido_auth_setup
 provides_skills:
-  - replay
-  - utils
   - automate
 requires_env:
   - name: CAIDO_PAT

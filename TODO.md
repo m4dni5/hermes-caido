@@ -6,6 +6,10 @@
 
 ## 1. Hermes Tool-Search Redesign (highest impact — do first)
 
+> **DONE 2026-08-10 (v0.6.0):** tool surface converted to 12 tools + 1 skill.
+> See commit(s) after ece4a30. Remaining: schema description audit (§ below),
+> live bridge verification (requires session restart).
+
 Hermes now employs a **search-and-execute tool pattern** (`tools/tool_search.py`):
 when any plugin/MCP tool exists, all non-core tools are hidden behind three
 bridge tools — `tool_search`, `tool_describe`, `tool_call` — and their full
@@ -28,29 +32,29 @@ README, skills, schemas, AGENTS.md after the rename.
 
 ### Target surface: 12 tools
 
-**Keep (7):**
-- `caido_onboard` — orient: project, scopes, intercept, recent traffic, findings count, hosted files, scope suggestion
-- `caido_health` — connectivity check (cheap troubleshooting probe)
-- `caido_search` — HTTPQL search of proxy history
-- `caido_recent` — recent requests
-- `caido_get` — full request/response by ID
-- `caido_findings` — list findings
-- `caido_create_finding` — record a finding
+**Keep (7):** *(implemented)*
+- [x] `caido_onboard` — orient: project, scopes, intercept, recent traffic, findings count, hosted files, scope suggestion
+- [x] `caido_health` — connectivity check (cheap troubleshooting probe)
+- [x] `caido_search` — HTTPQL search of proxy history
+- [x] `caido_recent` — recent requests
+- [x] `caido_get` — full request/response by ID
+- [x] `caido_findings` — list findings
+- [x] `caido_create_finding` — record a finding
 
-**Add (5):**
-- [ ] `caido_replay` — send a request as-is or with optional edits (method/path/body/headers). Combines `replay` + `replay_with_edit`; edit is an optional modifier, one domain, one discoverable tool. Handler owns raw-request assembly.
-- [ ] `caido_automate` — one-call automate (fuzzer) orchestration: source (request_id or raw template) + target value/param + payload list + strategy → create session, find FUZZ-slot byte offset, build full settings dict, start task, return `{session_id, task_id}`. Hides base64/byte-offset/settings-dict mechanics. Named `automate` per Caido's domain term.
-- [ ] `caido_automate_status` — poll automate task state/progress, return result counts. Full result bodies = Phase 4.
-- [ ] `caido_export_curl` — request ID → curl command (handoff to ffuf/bash).
-- [ ] `caido_auth_setup` — re-register preserved `handle_setup`: device-flow auth via subprocess isolation.
+**Add (5):** *(implemented)*
+- [x] `caido_replay` — send a request as-is or with optional edits (method/path/body/headers). Combines `replay` + `replay_with_edit`; edit is an optional modifier, one domain, one discoverable tool. Handler owns raw-request assembly.
+- [x] `caido_automate` — one-call automate orchestration: source (request_id) + target value + payload list + strategy → create session, find FUZZ-slot byte offset, build full settings dict, start task, return `{session_id, task_id}`. Hides base64/byte-offset/settings-dict mechanics. Named `automate` per Caido's domain term.
+- [x] `caido_automate_status` — poll automate task state/progress, return result counts. Full result bodies = Phase 4.
+- [x] `caido_export_curl` — request ID → curl command (handoff to ffuf/bash).
+- [x] `caido_auth_setup` — re-register preserved `handle_setup`: device-flow auth via subprocess isolation.
 
-**Modify (1): `caido_get` becomes dual-namespace** — the UI request-ID mismatch (see Known Issues) means a number quoted from the Caido UI is `metadata.id`, not `Request.id`. `caido_get(request_id)` must: (1) try `request(id:)`, accept only if the result's `metadata.id == requested`; (2) else scan `requestsByOffset` pages for `metadata.id == requested`, return all matches (usually 1–2). Update the schema description: "A number from the Caido UI is the request's metadata id; caido_get accepts both." This is the one behavioral change to a *kept* tool — do it in this pass, not later.
+**Modify (1): `caido_get` becomes dual-namespace** *(implemented)* — the UI request-ID mismatch (see Known Issues) means a number quoted from the Caido UI is `metadata.id`, not `Request.id`. `caido_get(request_id)` now: (1) tries `request(id:)`, accepts only if the result's `metadata.id == requested`; (2) else scans `requestsByOffset` pages for `metadata.id == requested`, returns all matches (usually 1–2). Schema description updated: "Accepts both the GraphQL request id and the number shown in the Caido UI history table." Verified live: 3618→5218 (blog.inlanefreight.local), 2595→3511/3512 (corporate.wolt.com).
 
-### Skills: 3 → 1
+### Skills: 3 → 1 *(implemented)*
 
-- [ ] **Delete `caido:replay` skill** — content folds into `caido_replay` tool schema + short recipe lines.
-- [ ] **Delete `caido:utils` skill** — content folds into `caido_onboard` / `caido_auth_setup` / `caido_export_curl` tools. Auth error guidance stays in tool schemas/handlers.
-- [ ] **Rewrite `caido:automate` as a ~100-line automate cookbook** (not an API reference): strategy × payloads decision table (ALL/SEQUENTIAL/MATRIX/PARALLEL), URL-encoding + `${IFS}` pitfalls, IDOR/param/auth-bypass patterns, mapping of `caido_automate` / `caido_automate_status` to the workflow, auth.setup fallback note. Keep the name `automate` (Caido's domain term) — avoids a multi-file rename cascade (plugin.yaml, __init__, schemas, README, AGENTS.md, frontmatter).
+- [x] **Delete `caido:replay` skill** — content folds into `caido_replay` tool schema + short recipe lines.
+- [x] **Delete `caido:utils` skill** — content folds into `caido_onboard` / `caido_auth_setup` / `caido_export_curl` tools. Auth error guidance stays in tool schemas/handlers.
+- [x] **Rewrite `caido:automate` as a ~100-line automate cookbook** (not an API reference): strategy × payloads decision table (ALL/SEQUENTIAL/MATRIX/PARALLEL), URL-encoding + `${IFS}` pitfalls, IDOR/param/auth-bypass patterns, mapping of `caido_automate` / `caido_automate_status` to the workflow, auth.setup fallback note. Keep the name `automate` (Caido's domain term) — avoids a multi-file rename cascade (plugin.yaml, __init__, schemas, README, AGENTS.md, frontmatter).
 
 ### Deliberately NOT exposing as tools (library stays callable via execute_code)
 
@@ -88,9 +92,9 @@ v0.57.0 shipped features the plugin doesn't use yet; none are operator-critical:
 
 ## 4. Packaging & Dependencies
 
-- [ ] Add `pyproject.toml` with `aiohttp` as a declared dependency
+- [x] **Add `pyproject.toml`** with `aiohttp` as a declared dependency (2026-08-10)
 - [x] ~~Replace hardcoded venv path in `auth_helper.py`~~ — now uses `sys.executable`
-- [ ] Install plugin into Hermes venv via `pip install -e .` (editable)
+- [ ] Install plugin into Hermes venv via `pip install -e .` (editable) — deferred: directory-plugin + symlink install works; packaging is for distribution
 - [ ] Skills import via `import automate` — no `sys.path.insert` needed
   - **Reconsider after tool-search redesign:** with only one recipe skill left, the `sys.path.insert` import pattern shrinks to that one skill — still worth packaging, lower priority
 
@@ -106,6 +110,9 @@ v0.57.0 shipped features the plugin doesn't use yet; none are operator-critical:
 - [x] ~~`search()` / `recent()` no scope filtering~~ — fixed via active scope state set by `caido_onboard`
 - [x] ~~`findings { id }` in onboard query~~ — fixed to `findings { count { value } }`
 - [ ] Event loop conflicts in `caido_onboard` / `caido_health` — auth helper subprocess workaround works, but health/graphql calls still run inside agent's event loop
+- [x] ~~**Automate settings dict must be complete**~~ — **FIXED 2026-08-10:** `AutomateSettingsInput` requires all fields (closeConnection, concurrency, extractors, payloads, placeholders, redirect, retryOnFailure, strategy, updateContentLength). `update_session` now fills safe defaults via `_complete_settings()`. Found during live handler test.
+- [ ] **Automate session delete fails while a task exists** — a session with a running/completed task returns "Failed to delete automate session / User error". Cancel the task first (`cancel_task`), then delete. Worth a note in the skill + possibly auto-cancel in `delete_session`.
+- [ ] **No `delete_finding` library wrapper** — schema has `deleteFindings` but `lib/graphql/findings.py` only has list/get/create/update. Add a sync + async wrapper if an agent-operator use case appears (finding lifecycle is mostly create/list).
 - [ ] **CONFIRMED (2026-08-10): UI request IDs ≠ GraphQL Request IDs — metadata.id namespace.** Verified live against 127.0.0.1:8080 (wolt project):
   - The Caido UI history table's ID column shows **`RequestMetadata.id`** (a group key), not **`Request.id`** (the per-request counter). They diverge — e.g. `Request.id=5218` (blog.inlanefreight.local) has `metadata.id=3618`; `Request.id=3511/3512` (corporate.wolt.com) have `metadata.id=2595`.
   - The plugin's `caido_get(request_id=...)` queries `request(id:)` = `Request.id`, so a number read from the UI (metadata.id) resolves to a **different request** or null. This is exactly the "request IDs in my UI did not match" report.

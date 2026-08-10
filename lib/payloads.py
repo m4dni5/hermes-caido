@@ -1,6 +1,6 @@
 """Payload helpers for Caido Automate.
 
-Configure what values get injected into placeholders during fuzzing.
+Configure what values get injected into placeholders during automate runs.
 Strategy determines how many payload sets are needed and how they combine.
 
 Strategies:
