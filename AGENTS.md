@@ -52,6 +52,15 @@ operation an agent-operator performs is a registered tool (12 total), and
 descriptions carry the decisions. The one remaining skill (`caido:automate`)
 is a recipe cookbook for automate *strategy*, which doesn't fit a tool schema.
 
+### Caido is the shared workspace
+The plugin's value is collaboration, not capability: most of what Caido does
+an agent can do faster in the terminal. Traffic replayed, automate runs, and
+findings created through the plugin appear in the Caido UI the user is
+watching — that's the shared surface. Tool descriptions, `caido_onboard`
+output, and the skill all carry the same guidance: **use Caido when the user
+should see or build on the work; use curl/ffuf for private exploration**. The
+plugin never claims to be the best automate engine — it's the best *visible* one.
+
 ### Auth runs in a subprocess
 The Hermes agent's async context interferes with aiohttp WebSocket connections (inherited SSL state, nested event loops). The auth flow runs in `auth_helper.py` as a fresh process. The `caido_onboard` tool handles the happy path; `caido_auth_setup` handles auth setup/troubleshooting as a tool.
 

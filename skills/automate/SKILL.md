@@ -1,10 +1,10 @@
 ---
 name: automate
-description: Caido Automate cookbook — strategy/payload decisions, FUZZ slot pattern, pitfalls, IDOR/auth-bypass patterns. Use with caido_automate / caido_automate_status tools.
+description: Caido Automate cookbook — when to use Caido vs terminal tools, strategy/payload decisions, FUZZ slot pattern, pitfalls, IDOR/auth-bypass patterns. Use with caido_automate / caido_automate_status tools.
 tags: [worker, offensive]
 ---
 
-# Caido Automate — Fuzzing Cookbook
+# Caido Automate — Cookbook
 
 Caido's automate engine is called **Automate**. The `caido_automate` tool runs
 a campaign in one call; this skill is the cookbook for *deciding what to automate
@@ -13,13 +13,34 @@ and how* — strategy, payloads, and the pitfalls that silently break runs.
 **FUZZ** (all-caps) is the literal placeholder token embedded in the raw
 request. Payloads are bare data (`admin`, not `http://host/admin`).
 
-## When to Use
+## Caido vs Terminal — the shared workspace
+
+**Caido is the shared workspace.** Traffic you replay, automate runs, and
+findings you create appear in the Caido UI the user is watching. The plugin's
+value is *collaboration*: the user sees what you're doing and can click through,
+verify, and build on it. The command line is for work the user doesn't need to
+watch.
+
+| Use Caido tools | Use terminal (curl/ffuf) |
+|---|---|
+| The user should see or verify the work | Independent exploration, user not watching |
+| Runs that should persist in proxy history | High-volume enumeration (10k+ payloads) |
+| Findings the user will review | Quick one-off probes |
+| Replaying a request the user referenced | Iterating fast, no need for history |
+
+Rule of thumb: **if the user would benefit from seeing it in the Caido UI, do
+it in Caido. If it's your own private probing, use the terminal.** Prefer
+`caido_export_curl` + ffuf for heavy enumeration — it's faster, headless, and
+keeps the shared history clean.
+
+## When to Use This Skill
 
 - The `caido_automate` tool returns an error and you need to understand why
 - You need MATRIX/PARALLEL strategy (multiple placeholders) — `caido_automate`
   handles one placeholder; multi-slot runs go through `lib/` via execute_code
 - You're automating URLs and need to know about encoding
 - You want the standard patterns: IDOR, parameter automate, auth bypass
+- You're deciding whether to use Caido Automate or ffuf for a job
 
 ## Tool Mapping
 
@@ -28,6 +49,7 @@ request. Payloads are bare data (`admin`, not `http://host/admin`).
 | Run a campaign (one placeholder) | `caido_automate(request_id, target, payloads, strategy)` |
 | Poll a task | `caido_automate_status(task_id)` |
 | Multi-placeholder / advanced config | `lib/automate` + `lib/payloads` + `lib/placeholders` via execute_code |
+| Hand a request to ffuf | `caido_export_curl(request_id)` then run the curl in ffuf |
 
 ## Strategy × Payloads Decision Table
 

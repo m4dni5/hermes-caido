@@ -232,8 +232,8 @@ CAIDO_EXPORT_CURL = {
     "name": "caido_export_curl",
     "description": (
         "Export a request from proxy history as a curl command. "
-        "Use when you need to reproduce a request in a terminal, pipe it into "
-        "ffuf or another tool, or hand it to the user. Accepts both the "
+        "Use to hand a request to the user, feed it into ffuf or another "
+        "terminal tool, or reproduce it outside Caido. Accepts both the "
         "caido_search/caido_recent request id and the number shown in the Caido "
         "UI history table."
     ),
@@ -256,7 +256,10 @@ CAIDO_REPLAY = {
         "Sends the request as-is, or apply edits (method/path/headers/body) "
         "before sending — useful for testing modified requests, auth bypasses, "
         "or parameter changes. Accepts both the caido_search/caido_recent "
-        "request id and the number shown in the Caido UI history table."
+        "request id and the number shown in the Caido UI history table. "
+        "Use when the traffic should be visible in Caido (shared workspace). "
+        "For quick private probes the user doesn't need to see, plain curl is "
+        "faster."
     ),
     "parameters": {
         "type": "object",
@@ -303,8 +306,11 @@ CAIDO_AUTOMATE = {
         "request, a target value to automate, a payload list, and a strategy; "
         "creates the session, embeds the FUZZ placeholder, configures payloads, "
         "and starts the task. Returns {session_id, task_id}. Use for parameter "
-        "automate, IDOR discovery, auth bypass attempts, and similar. For "
-        "strategy/payload guidance see the caido:automate skill."
+        "automate, IDOR discovery, auth bypass attempts, and similar — when the "
+        "run should be visible in Caido (shared workspace). For high-volume or "
+        "headless fuzzing, ffuf is often the better tool: export the request "
+        "with caido_export_curl and run ffuf directly. For strategy/payload "
+        "guidance see the caido:automate skill."
     ),
     "parameters": {
         "type": "object",

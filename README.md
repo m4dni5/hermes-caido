@@ -27,6 +27,22 @@ Hermes Agent plugin for the [Caido](https://caido.io) HTTP proxy. Search history
 |---|---|
 | `caido:automate` | Strategy × payloads decision table, FUZZ slot pattern, pitfalls, IDOR/auth-bypass patterns |
 
+## Caido vs the terminal — when to use this plugin
+
+Most of what Caido does, an agent can do faster in the command line (curl,
+ffuf). This plugin's value is that it creates a **shared workspace with the
+user**: traffic you replay, automate runs, and findings you create appear in
+the Caido UI the user is watching. Use Caido tools when the user should see or
+build on the work. When you're exploring independently and the user doesn't
+need to watch, use terminal tools instead — they're faster and don't clutter
+the shared history.
+
+- **Use Caido** for: replaying a request the user referenced, runs that should
+  persist in proxy history, findings the user will review, anything the user
+  should be able to click through and verify.
+- **Use terminal** for: independent exploration, high-volume enumeration (export
+  the request with `caido_export_curl` and run ffuf), quick one-off probes.
+
 ## Request IDs: what the UI shows vs what the tools return
 
 The Caido UI history table shows the request's **metadata id**, which is a

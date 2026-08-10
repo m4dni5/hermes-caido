@@ -481,6 +481,16 @@ async def handle_onboard(args: dict, **kwargs) -> str:
             "recent": {"count": recent_count, "hosts": recent_hosts},
             "findings_count": findings_count,
             "hosted_files": hosted,
+            "workspace": {
+                "note": (
+                    "Caido is the shared workspace: traffic you replay, automate runs, "
+                    "and findings you create appear in the UI the user is watching. "
+                    "Use Caido tools when the user should see or build on the work. "
+                    "When you're exploring independently and the user doesn't need "
+                    "to watch, use terminal tools (curl/ffuf) instead — they're "
+                    "faster and don't clutter the shared history."
+                ),
+            },
         }, indent=2)
 
     except Exception as e:

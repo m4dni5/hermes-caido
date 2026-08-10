@@ -100,9 +100,17 @@ v0.57.0 shipped features the plugin doesn't use yet; none are operator-critical:
 
 ## 5. Automate — Remaining Phases
 
+**Agreed direction (2026-08-10, A+C):** implement Phase 4 result retrieval so
+`caido_automate_status` returns what the fuzzer found (status codes, lengths,
+bodies) — the tool must tell the truth about outcomes, not just "started".
+Framing C is baked into guidance: the skill and tool descriptions steer heavy
+enumeration to `caido_export_curl` + ffuf, and Caido Automate is positioned as
+the *visible* (shared-workspace) fuzzer, not the best fuzzer.
+
 - [ ] Phase 4: Result retrieval — `get_entry_requests()` with HTTPQL filter and ordering; wire into `caido_automate_status` when done
-- [ ] Phase 5: Fuzzing patterns (IDOR, parameter fuzzing, auth bypass, rate limiting) — keep in the `caido:automate` cookbook; session/task control is handled by `caido_automate` / `caido_automate_status` tools
+- [ ] Phase 5: Automate patterns (IDOR, parameter automate, auth bypass, rate limiting) — keep in the `caido:automate` cookbook; session/task control is handled by `caido_automate` / `caido_automate_status` tools
 - [ ] Extractor builder + `testExtractor` (see §2) — natural companion to Phase 4 (extract results as columns)
+- [x] **Shared-workspace guidance** — `caido_onboard` returns a `workspace.note`; `caido_replay`/`caido_automate` descriptions carry the "use Caido when the user should see it, curl/ffuf for private probing" rule; skill has a Caido-vs-terminal decision table; README/AGENTS.md document the principle. (2026-08-10)
 
 ## Known Issues
 
