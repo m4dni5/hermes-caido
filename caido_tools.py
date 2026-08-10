@@ -269,6 +269,7 @@ async def handle_automate(args: dict, **kwargs) -> str:
         payloads = args.get("payloads", [])
         strategy = args.get("strategy", "ALL")
         session_name = args.get("session_name")
+        url_encode = args.get("url_encode", True)
 
         if not payloads:
             return json.dumps({"error": "payloads must be a non-empty list"}, indent=2)
@@ -318,7 +319,7 @@ async def handle_automate(args: dict, **kwargs) -> str:
         }
         settings = {
             "placeholders": ranges,
-            "payloads": build_payload_input([payloads]),
+            "payloads": build_payload_input([payloads], url_encode=url_encode),
             "strategy": strategy,
         }
         updated = await automate_update_session(
@@ -340,6 +341,7 @@ async def handle_automate(args: dict, **kwargs) -> str:
             "task_id": task.get("taskId"),
             "entry_id": task.get("entryId"),
             "strategy": strategy,
+            "url_encode": url_encode,
             "placeholder": ranges,
             "status": "started",
         }, indent=2)

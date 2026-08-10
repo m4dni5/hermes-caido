@@ -33,6 +33,25 @@ it in Caido. If it's your own private probing, use the terminal.** Prefer
 `caido_export_curl` + ffuf for heavy enumeration — it's faster, headless, and
 keeps the shared history clean.
 
+## Preprocessors vs. payload crafting
+
+Caido supports preprocessors (prefix, suffix, urlEncode, custom workflows), but
+the tool deliberately exposes only the one that matters most: **url_encode**
+(default true, matching the Caido UI default — payloads are percent-encoded
+before injection with the UI's charset `:/?#[]{}@$&+ ,;=%<>`, so spaces and
+reserved chars don't break the request line).
+
+Rule of thumb: **write payloads to not need processing.**
+
+- URL/path/query fuzzing → keep `url_encode: true` (default). A payload like
+  `admin or 1=1` is sent as `admin%20or%201%3D1` and works.
+- Body/JSON/header fuzzing → pass `url_encode: false` and embed the required
+  quoting/termination directly in the payload values: `["\"admin\"", "\"user\""]`
+  instead of `["admin", "user"]` with a quote preprocessor.
+- Anything else (prefix/suffix/custom workflows) → generate the transformed
+  payload list yourself. It's just as easy, and the status tool then shows
+  exactly what was sent — no invisible transform layer.
+
 ## When to Use This Skill
 
 - The `caido_automate` tool returns an error and you need to understand why
@@ -135,25 +154,30 @@ result = automate.start_task(session_id)
 2. **Byte offsets are UTF-8 bytes, not characters** — multi-byte content
    (non-ASCII) produces different offsets. `placeholders.find_value` handles
    this; don't hand-compute.
-3. **URL-encode payloads when automating inside URLs** — Caido's hosted-file
-   payloads don't auto-encode. Use the `urlEncode` preprocessor or pre-encode
-   your wordlist. `${IFS}` bypasses space restrictions in shell commands
-   passed through SSRF.
-4. **Update requires connection dict** — `update_session` needs the full
+3. **URL-encoding is on by default** — `caido_automate` percent-encodes
+   payloads with the UI's charset (spaces/reserved chars → `%XX`), which is
+   what you want inside URLs. Set `url_encode: false` only when fuzzing
+   bodies/JSON/headers where literal values matter. If you hand-encode values
+   AND leave url_encode on, you'll double-encode (`%2520`).
+4. **Shell injection inside URLs** — when automating shell commands through
+   SSRF/param injection, spaces may be stripped by the backend even when
+   URL-encoded. `${IFS}` (no spaces) bypasses space restrictions; keep it in
+   the payload list.
+5. **Update requires connection dict** — `update_session` needs the full
    connection info even when only changing settings; always fetch the session
    first (the tool does this internally).
-5. **Tasks are tied to entries, not sessions** — `start_task` takes a session
+6. **Tasks are tied to entries, not sessions** — `start_task` takes a session
    ID but creates a task per entry.
-6. **MATRIX/PARALLEL need N sets** — passing one flat list to a multi-slot
+7. **MATRIX/PARALLEL need N sets** — passing one flat list to a multi-slot
    session fails validation with a clear message. Use the tool for single-slot,
    execute_code for multi-slot.
-7. **`cancelAutomateTask` returns `cancelledId`**, not `deletedId`; pause/resume
+8. **`cancelAutomateTask` returns `cancelledId`**, not `deletedId`; pause/resume
    errors come back in `userError`, not `error`.
-8. **Deleting a session with a task fails** — cancel the task first
+9. **Deleting a session with a task fails** — cancel the task first
    (`cancel_task`), then delete the session.
-9. **Completed tasks leave the recent list** — poll with `session_id` (or
-   `entry_id`), not `task_id`, after the run finishes; sessions and entries
-   persist with all results.
+10. **Completed tasks leave the recent list** — poll with `session_id` (or
+    `entry_id`), not `task_id`, after the run finishes; sessions and entries
+    persist with all results.
 
 ## HTTPQL Quick Reference (for result filtering)
 

@@ -107,9 +107,10 @@ Framing C is baked into guidance: the skill and tool descriptions steer heavy
 enumeration to `caido_export_curl` + ffuf, and Caido Automate is positioned as
 the *visible* (shared-workspace) fuzzer, not the best fuzzer.
 
-- [x] **Phase 4: Result retrieval** — `get_entry_requests()` implemented (async + sync wrapper); `caido_automate_status` now returns count, status-code distribution, error counts, highlights, and full results (`brief: false`). Accepts `entry_id` (durable) or `task_id` (in-progress). Verified live: 5-payload run → all results with payload→status mapping. (2026-08-10)
+- [x] **Phase 4: Result retrieval** — `get_entry_requests()` implemented (async + sync wrapper); `caido_automate_status` now returns count, status-code distribution, error counts, highlights, and full results (`brief: false`). Accepts `session_id` (stable), `entry_id` (durable), or `task_id` (in-progress). Verified live: 5-payload run → all results with payload→status mapping. (2026-08-10)
 - [ ] Phase 5: Automate patterns (IDOR, parameter automate, auth bypass, rate limiting) — keep in the `caido:automate` cookbook; session/task control is handled by `caido_automate` / `caido_automate_status` tools
 - [ ] Extractor builder + `testExtractor` (see §2) — natural companion to Phase 4 (extract results as columns)
+- [x] **`caido_automate` URL-encoding default** — `url_encode: true` (default) percent-encodes payloads with the UI charset `:/?#[]{}@$&+ ,;=%<>`; set false for body/JSON/header fuzzing. Verified live: `test value with spaces` → `test%20value%20with%20spaces` → 200 (was 400). Decision: **Option A** — payloads written to need no processing; prefix/suffix/custom workflows deliberately not exposed (generate transformed payload lists instead). Skill + AGENTS.md updated. (2026-08-10)
 - [x] **Shared-workspace guidance** — `caido_onboard` returns a `workspace.note`; `caido_replay`/`caido_automate` descriptions carry the "use Caido when the user should see it, curl/ffuf for private probing" rule; skill has a Caido-vs-terminal decision table; README/AGENTS.md document the principle. (2026-08-10)
 
 ## Known Issues

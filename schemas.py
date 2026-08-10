@@ -334,6 +334,17 @@ CAIDO_AUTOMATE = {
                 "default": "ALL",
                 "description": "How payloads combine: ALL replaces every placeholder at once; SEQUENTIAL replaces one at a time; MATRIX/PARALLEL need one payload set per placeholder (see skill).",
             },
+            "url_encode": {
+                "type": "boolean",
+                "default": True,
+                "description": (
+                    "URL-encode payloads before injection (default true, matching the "
+                    "Caido UI default). Keep true when fuzzing values inside URLs, "
+                    "paths, or query strings — spaces/special chars in payloads break "
+                    "the request line otherwise (400s). Set false when fuzzing request "
+                    "bodies, JSON, or headers where literal values are required."
+                ),
+            },
             "session_name": {
                 "type": "string",
                 "description": "Optional name for the automate session.",

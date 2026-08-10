@@ -131,7 +131,7 @@ python3 -m py_compile caido_tools.py
 
 5. **`interceptOptions.scope.scopeId` is intercept-only** — Caido doesn't expose "active scope for proxy history" via GraphQL. Scopes are per-mode in the UI (intercept/filter/history).
 
-6. **URL-encode payload values when automating inside URLs** — Caido's hosted file payloads don't auto-encode. Use the `urlEncode` preprocessor or pre-encode your wordlist. `${IFS}` bypasses space restrictions in shell commands passed through SSRF.
+6. **URL-encoding is on by default** — `caido_automate` percent-encodes payloads with the UI charset (spaces/reserved chars → `%XX`). Set `url_encode: false` when fuzzing bodies/JSON/headers where literal values matter. Payloads should be written to need no processing (Option A): embed quoting/termination directly in values rather than reaching for prefix/suffix preprocessors. `${IFS}` bypasses space restrictions in shell commands passed through SSRF.
 
 7. **Gopher/file/dict protocols disabled on many targets** — SSRF exploitation often requires HTTP-only approaches. Check what the server's libcurl supports.
 

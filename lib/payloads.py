@@ -99,24 +99,47 @@ def validate_payload_config(
     _validate_sets_for_strategy(strategy, num_placeholders, len(payload_sets), set_lengths)
 
 
-def build_payload_input(payload_sets: list[list[str]]) -> list[dict[str, Any]]:
+# Charset for the urlEncode preprocessor — the set of characters to
+# percent-encode. Matches the Caido UI default for new automate sessions.
+# Includes space, so payloads like "admin or 1=1" don't break the request line.
+_URL_ENCODE_CHARSET = ":/?#[]{}@$&+ ,;=%<>"
+
+
+def build_payload_input(
+    payload_sets: list[list[str]],
+    url_encode: bool = True,
+) -> list[dict[str, Any]]:
     """Convert payload value lists into AutomatePayloadInput dicts.
 
-    Each set becomes a simpleList payload.
+    Each set becomes a simpleList payload. Mirrors the Caido UI default of a
+    urlEncode preprocessor on new automate sessions: payloads are
+    URL-encoded before injection, which keeps values with spaces/special
+    chars from breaking the request line. Disable for body/JSON/header
+    fuzzing where literal values are required.
 
     Args:
         payload_sets: List of lists of string values.
+        url_encode: Whether to attach a urlEncode preprocessor (default True,
+            matching the Caido UI default).
 
     Returns:
         List of dicts matching the GraphQL AutomatePayloadInput shape.
     """
-    return [
-        {
+    result = []
+    for values in payload_sets:
+        payload: dict[str, Any] = {
             "options": {"simpleList": {"list": values}},
             "preprocessors": [],
         }
-        for values in payload_sets
-    ]
+        if url_encode:
+            payload["preprocessors"].append(
+                {"options": {"urlEncode": {
+                    "charset": _URL_ENCODE_CHARSET,
+                    "nonAscii": True,
+                }}}
+            )
+        result.append(payload)
+    return result
 
 
 def build_number_payload(
