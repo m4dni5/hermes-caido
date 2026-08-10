@@ -11,6 +11,7 @@ from sync import sync_run
 from graphql.replay import (
     replay as _replay,
     replay_with_edit as _replay_with_edit,
+    replay_in_session as _replay_in_session,
     sessions as _sessions,
     get_session as _get_session,
     get_session_entries as _get_session_entries,
@@ -49,6 +50,24 @@ def replay_with_edit(
         headers=headers,
         body=body,
         session_name=session_name,
+    )
+
+
+def replay_in_session(
+    session_id: str,
+    path: str | None = None,
+    method: str | None = None,
+    headers: list[tuple[str, str]] | None = None,
+    body: str | None = None,
+) -> dict:
+    """Edit the latest entry of an existing session and resend it."""
+    return sync_run(
+        _replay_in_session,
+        session_id=session_id,
+        path=path,
+        method=method,
+        headers=headers,
+        body=body,
     )
 
 

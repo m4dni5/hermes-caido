@@ -81,7 +81,10 @@ tries `request(id:)` and falls back to a `requestsByOffset` scan by
 `caido_export_curl` accept both namespaces automatically.
 
 ### FUZZ slot pattern for placeholders
-Modify the raw request to embed `FUZZ` at the target location, then call `find_value(template, "FUZZ")` to get byte ranges. Payloads are bare data (`admin`, not `http://127.0.0.1/admin`). No preprocessors needed.
+Modify the raw request to embed `FUZZ` at the target location, then call `find_value(template, "FUZZ")` to get byte ranges. Payloads are bare data (`admin`, not `http://127.0.0.1/admin`). `caido_automate` URL-encodes payloads by default (UI charset); pass `url_encode: false` for body/JSON/header fuzzing where literals matter.
+
+### Replay sessions: one-shot vs iteration
+`caido_replay(request_id=...)` creates a new session per call — right for one-off replays. `caido_replay(session_id=...)` edits the session's latest entry and resends, appending a new entry to the same session's history (the UI's History drop-down + arrows). Use iteration mode to group auth-bypass/parameter attempts in one session. `replay_in_session()` in `lib/graphql/replay.py`; `_apply_mutations()` is shared with `replay_with_edit()`.
 
 ### Scope-aware workflow
 Caido's GraphQL API has no concept of "the scope the history tab is filtering by" — the UI stores that client-side. The plugin bridges this gap:

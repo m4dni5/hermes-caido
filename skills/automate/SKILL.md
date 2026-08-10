@@ -66,7 +66,9 @@ Rule of thumb: **write payloads to not need processing.**
 | Need | Tool |
 |---|---|
 | Run a campaign (one placeholder) | `caido_automate(request_id, target, payloads, strategy)` |
-| Poll a task | `caido_automate_status(task_id)` |
+| Poll a task | `caido_automate_status(session_id)` |
+| Replay once (new session) | `caido_replay(request_id, ...edits)` |
+| Iterate in one session | `caido_replay(session_id, ...edits)` — appends to history |
 | Multi-placeholder / advanced config | `lib/automate` + `lib/payloads` + `lib/placeholders` via execute_code |
 | Hand a request to ffuf | `caido_export_curl(request_id)` then run the curl in ffuf |
 
@@ -178,6 +180,10 @@ result = automate.start_task(session_id)
 10. **Completed tasks leave the recent list** — poll with `session_id` (or
     `entry_id`), not `task_id`, after the run finishes; sessions and entries
     persist with all results.
+11. **Replay sessions accumulate entries** — each `startReplayTask` appends a
+    new entry to the session's history. Use `caido_replay(session_id=...)`
+    to iterate (auth bypass, param tweaks) and keep attempts grouped; the UI
+    shows the latest with a History drop-down/arrows for previous ones.
 
 ## HTTPQL Quick Reference (for result filtering)
 

@@ -218,11 +218,22 @@ async def handle_export_curl(args: dict, **kwargs) -> str:
 
 async def handle_replay(args: dict, **kwargs) -> str:
     try:
-        from graphql.replay import replay as replay_request, replay_with_edit, get_session_result
+        from graphql.replay import replay as replay_request, replay_with_edit, replay_in_session, get_session_result
 
-        request_id = args["request_id"]
+        session_id = args.get("session_id")
+        request_id = args.get("request_id")
         has_edits = any(k in args for k in ("path", "method", "headers", "body"))
-        if has_edits:
+
+        if session_id and not request_id:
+            # Iteration mode: resend into an existing session's history.
+            result = await replay_in_session(
+                session_id=session_id,
+                path=args.get("path"),
+                method=args.get("method"),
+                headers=args.get("headers"),
+                body=args.get("body"),
+            )
+        elif has_edits:
             result = await replay_with_edit(
                 request_id=request_id,
                 path=args.get("path"),

@@ -499,6 +499,153 @@ async def _resolve_source_id(request_id: str, client=None) -> str | dict:
     return resolved.get("id", request_id)
 
 
+def _apply_mutations(
+    raw: str,
+    method: str | None = None,
+    path: str | None = None,
+    headers: list[tuple[str, str]] | None = None,
+    body: str | None = None,
+) -> tuple[str, list[str]]:
+    """Apply method/path/header/body edits to a raw HTTP request.
+
+    Shared by ``replay_with_edit`` (new session) and ``replay_in_session``
+    (edit-and-resend in an existing session).
+
+    Args:
+        raw:     Raw HTTP request string.
+        method:  New HTTP method (e.g., "POST").
+        path:    New path (e.g., "/api/admin/users").
+        headers: List of (name, value) tuples to set/replace.
+        body:    New request body (auto-updates Content-Length).
+
+    Returns:
+        Tuple of ``(modified_raw, mutations)`` where mutations is a list of
+        human-readable change descriptions.
+    """
+    lines = raw.split("\r\n") if "\r\n" in raw else raw.split("\n")
+    request_line = lines[0]
+    req_headers = []
+    req_body = ""
+    in_body = False
+
+    for line in lines[1:]:
+        if in_body:
+            req_body += line
+            continue
+        if line.strip() == "":
+            in_body = True
+            continue
+        if ":" in line:
+            req_headers.append(line)
+
+    mutations = []
+
+    # Apply method/path changes
+    parts = request_line.split(" ", 2)
+    if method:
+        mutations.append(f"method: {parts[0]} -> {method}")
+        parts[0] = method
+    if path:
+        mutations.append(f"path: {parts[1]} -> {path}")
+        parts[1] = path
+    request_line = " ".join(parts)
+
+    # Apply header changes
+    if headers:
+        for name, value in headers:
+            req_headers = [h for h in req_headers if not h.lower().startswith(name.lower() + ":")]
+            req_headers.append(f"{name}: {value}")
+            mutations.append(f"header: {name}: {value}")
+
+    # Apply body changes
+    if body is not None:
+        req_body = body
+        req_headers = [h for h in req_headers if not h.lower().startswith("content-length:")]
+        req_headers.append(f"Content-Length: {len(body)}")
+        mutations.append(f"body: {len(body)} bytes")
+
+    # Reconstruct raw request
+    modified_raw = request_line + "\r\n"
+    modified_raw += "\r\n".join(req_headers) + "\r\n"
+    modified_raw += "\r\n" + req_body
+
+    return modified_raw, mutations
+
+
+async def replay_in_session(
+    session_id: str,
+    path: str | None = None,
+    method: str | None = None,
+    headers: list[tuple[str, str]] | None = None,
+    body: str | None = None,
+    client=None,
+) -> dict:
+    """Edit the latest entry of an existing session and resend it.
+
+    Iteration workflow: each call appends a new entry to the same session's
+    history (visible in the Caido UI's Replay tab history drop-down), rather
+    than creating a fresh session per attempt. The base request is the
+    session's latest entry.
+
+    Args:
+        session_id: ID of the existing replay session.
+        path:       New path (e.g., "/api/admin/users").
+        method:     New HTTP method (e.g., "POST").
+        headers:    List of (name, value) tuples to set/replace.
+        body:       New request body (auto-updates Content-Length).
+
+    Returns:
+        Dict with ``status``, ``sessionId``, ``taskId``, ``mutations`` (or ``error``).
+    """
+    try:
+        # Step 1: Get the session's latest entry raw as the base request.
+        session = await get_session(session_id, client=client)
+        if "error" in session:
+            return session
+        entries = session.get("entries", [])
+        if not entries:
+            return {"error": f"Session {session_id!r} has no entries to edit"}
+
+        latest = entries[-1]
+        entry_id = latest.get("id")
+        raw = latest.get("raw") or ""
+        if not raw:
+            return {"error": f"Entry {entry_id!r} has no raw request to edit"}
+
+        # Connection info from the session's entries (same host/port across runs).
+        conn = latest.get("connection") or {}
+        host = conn.get("host", "")
+        port = conn.get("port", 443)
+        is_tls = conn.get("isTLS", True)
+
+        # Step 2: Apply edits
+        modified_raw, mutations = _apply_mutations(raw, method, path, headers, body)
+
+        # Step 3: Update the latest entry's draft
+        draft_result = await update_entry_draft(
+            entry_id=entry_id,
+            raw=modified_raw,
+            host=host,
+            port=port,
+            is_tls=is_tls,
+            client=client,
+        )
+        if "error" in draft_result:
+            return draft_result
+
+        # Step 4: Resend — appends a new entry to the same session
+        replay_result = await start_replay_task(session_id, client=client)
+        if "error" in replay_result:
+            return replay_result
+
+        return {
+            **replay_result,
+            "mutations": mutations,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 async def replay_with_edit(
     request_id: str,
     path: str | None = None,
@@ -546,52 +693,7 @@ async def replay_with_edit(
         is_tls = req.get("isTls", True)
 
         # Step 2: Parse and mutate
-        lines = raw.split("\r\n") if "\r\n" in raw else raw.split("\n")
-        request_line = lines[0]
-        req_headers = []
-        req_body = ""
-        in_body = False
-
-        for line in lines[1:]:
-            if in_body:
-                req_body += line
-                continue
-            if line.strip() == "":
-                in_body = True
-                continue
-            if ":" in line:
-                req_headers.append(line)
-
-        mutations = []
-
-        # Apply method/path changes
-        parts = request_line.split(" ", 2)
-        if method:
-            mutations.append(f"method: {parts[0]} -> {method}")
-            parts[0] = method
-        if path:
-            mutations.append(f"path: {parts[1]} -> {path}")
-            parts[1] = path
-        request_line = " ".join(parts)
-
-        # Apply header changes
-        if headers:
-            for name, value in headers:
-                req_headers = [h for h in req_headers if not h.lower().startswith(name.lower() + ":")]
-                req_headers.append(f"{name}: {value}")
-                mutations.append(f"header: {name}: {value}")
-
-        # Apply body changes
-        if body is not None:
-            req_body = body
-            req_headers = [h for h in req_headers if not h.lower().startswith("content-length:")]
-            req_headers.append(f"Content-Length: {len(body)}")
-            mutations.append(f"body: {len(body)} bytes")
-
-        # Reconstruct raw request
-        modified_raw = request_line + "\r\n"
-        modified_raw += "\r\n".join(req_headers) + "\r\n"
-        modified_raw += "\r\n" + req_body
+        modified_raw, mutations = _apply_mutations(raw, method, path, headers, body)
 
         # Step 3: Create session from original request
         session = await create_session(

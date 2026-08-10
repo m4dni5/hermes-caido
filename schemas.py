@@ -253,20 +253,27 @@ CAIDO_REPLAY = {
     "name": "caido_replay",
     "description": (
         "Replay an HTTP request from proxy history, optionally with edits. "
-        "Sends the request as-is, or apply edits (method/path/headers/body) "
-        "before sending — useful for testing modified requests, auth bypasses, "
-        "or parameter changes. Accepts both the caido_search/caido_recent "
-        "request id and the number shown in the Caido UI history table. "
-        "Use when the traffic should be visible in Caido (shared workspace). "
-        "For quick private probes the user doesn't need to see, plain curl is "
-        "faster."
+        "Two modes: (1) pass request_id to create a new session and replay "
+        "once — or with edits (method/path/headers/body); (2) pass session_id "
+        "to edit-and-resend in an existing session, appending a new entry to "
+        "that session's history (visible in the Replay tab history drop-down) — "
+        "use for iterating on the same request (auth bypasses, parameter "
+        "tweaks) so all attempts stay grouped. Accepts both the "
+        "caido_search/caido_recent request id and the number shown in the Caido "
+        "UI history table. Use when the traffic should be visible in Caido "
+        "(shared workspace). For quick private probes the user doesn't need to "
+        "see, plain curl is faster."
     ),
     "parameters": {
         "type": "object",
         "properties": {
             "request_id": {
                 "type": "string",
-                "description": "Request ID to replay — either from caido_search/caido_recent output, or the number shown in the Caido UI history table.",
+                "description": "Request ID to replay — either from caido_search/caido_recent output, or the number shown in the Caido UI history table. Required when session_id is not given.",
+            },
+            "session_id": {
+                "type": "string",
+                "description": "Existing replay session ID to resend into (iteration mode). When given without request_id, edits apply to the session's latest entry and a new entry is appended to the same session's history.",
             },
             "path": {
                 "type": "string",
@@ -292,10 +299,10 @@ CAIDO_REPLAY = {
             },
             "session_name": {
                 "type": "string",
-                "description": "Optional name for the replay session.",
+                "description": "Optional name for a newly created replay session (ignored in session_id mode).",
             },
         },
-        "required": ["request_id"],
+        "required": [],
     },
 }
 
