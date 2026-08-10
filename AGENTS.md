@@ -160,8 +160,8 @@ sys.path.insert(0, os.path.join(os.environ["CAIDO_PLUGIN_DIR"], "lib"))
 
 ## Future Work
 
-See `TODO.md` for:
-- Packaging with `pyproject.toml` + `pip install -e .`
+See `TODO.md` for the open items:
+- Automate patterns (Phase 5), extractor builder
 - SDK migration when `caido-sdk-client` >= 3.12-compatible + automate support
-- Automate phases 4–5 (result retrieval, automate patterns)
-- Tool-search discoverability verification after the tool conversion
+- Packaging via `pip install -e .` (pyproject.toml exists)
+- Known issues: session-delete-with-task, replay/automate ID namespace split, event-loop conflicts
