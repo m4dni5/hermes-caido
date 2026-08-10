@@ -1,5 +1,5 @@
 name: caido
-version: 0.6.0
+version: 0.7.0
 description: Caido HTTP proxy integration — onboard, search, replay, automate campaigns, findings, export curl, auth setup.
 author: matt
 provides_tools:
