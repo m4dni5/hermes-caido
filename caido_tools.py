@@ -238,8 +238,7 @@ async def handle_onboard(args: dict, **kwargs) -> str:
                 "auth": {"authenticated": False, "error": auth_error},
                 "message": (
                     "Not authenticated. Load the caido:utils skill and run auth.setup() "
-                    "to configure credentials. If your Caido instance is local "
-                    "(127.0.0.1:8080), no PAT is needed — the plugin connects as guest automatically."
+                    "to configure credentials."
                 ),
             }, indent=2)
 
@@ -323,7 +322,6 @@ async def handle_onboard(args: dict, **kwargs) -> str:
         result = {"error": error_str}
         if any(kw in error_str.lower() for kw in ["auth", "token", "pat", "401", "403", "forbidden"]):
             result["message"] = (
-                "Load the caido:utils skill and run auth.setup() to configure credentials. "
-                "If your Caido instance is local (127.0.0.1:8080), no PAT is needed."
+                "Load the caido:utils skill and run auth.setup() to configure credentials."
             )
         return json.dumps(result, indent=2)

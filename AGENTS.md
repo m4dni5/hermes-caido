@@ -52,8 +52,8 @@ Tools are for high-frequency, single-call operations (search, get, recent). Ever
 ### Auth runs in a subprocess
 The Hermes agent's async context interferes with aiohttp WebSocket connections (inherited SSL state, nested event loops). The auth flow runs in `auth_helper.py` as a fresh process. The `caido_onboard` tool handles the happy path; auth setup/troubleshooting lives in the `caido:utils` skill.
 
-### Local instances connect as guest
-When the Caido URL is local (`127.0.0.1:8080`, `localhost:8080`, `[::1]:8080`), the plugin skips authentication entirely and connects without an Authorization header. No PAT is required. This is detected automatically in `_is_local_url()` — if the URL resolves to a loopback address on port 8080, `_ensure_auth()` returns `(url, None)` and the session is created without auth headers.
+### All instances require authentication
+Every Caido instance requires an access token — including local ones at `127.0.0.1:8080`. The client tries, in order: cached token → token refresh → full device code flow (PAT from `CAIDO_PAT` env/`.env`). There is no guest mode; an unauthenticated `requests` query returns `INVALID_TOKEN`. On auth failure, the tool guidance directs the agent to load `caido:utils` and run `auth.setup()`.
 
 ### Auth error guidance
 All error paths in tool handlers and the client layer include explicit guidance: **"Load the caido:utils skill and run auth.setup()"**. The agent should follow this instruction whenever a Caido tool returns an auth-related error.

@@ -20,8 +20,7 @@ CAIDO_ONBOARD = {
         "auth status, active project, scopes, intercept config, recent traffic "
         "summary, findings count, and available hosted files. Use this at the "
         "start of any Caido session to orient yourself. "
-        "If auth fails, load the caido:utils skill and run auth.setup(). "
-        "Local instances (127.0.0.1:8080) connect as guest — no PAT needed."
+        "If auth fails, load the caido:utils skill and run auth.setup()."
     ),
     "parameters": {
         "type": "object",

@@ -37,7 +37,7 @@ import auth
 
 For fresh installs or token issues. The `caido_onboard` tool handles the happy path automatically.
 
-**Local instances (127.0.0.1:8080) connect as guest** — no PAT needed. The plugin detects local URLs and skips authentication automatically. You only need auth setup for remote/cloud Caido instances.
+**All instances require authentication — including local ones (127.0.0.1:8080).** There is no guest mode; an unauthenticated `requests` query returns `INVALID_TOKEN`. Auth setup is required for local and remote/cloud Caido instances alike.
 
 ```python
 import auth

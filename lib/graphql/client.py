@@ -106,18 +106,6 @@ def _load_dotenv(path: Path) -> dict[str, str]:
     return env
 
 
-def _is_local_url(url: str) -> bool:
-    """Check if a Caido URL points to a local instance (no auth needed)."""
-    from urllib.parse import urlparse
-    try:
-        parsed = urlparse(url if "://" in url else f"http://{url}")
-        host = parsed.hostname or ""
-        port = parsed.port
-        return host in ("127.0.0.1", "localhost", "::1") and port == 8080
-    except Exception:
-        return False
-
-
 def _resolve_pat() -> str:
     """Return PAT from env/secrets. Raises RuntimeError if missing."""
     pat = os.environ.get("CAIDO_PAT")
@@ -135,18 +123,9 @@ def _resolve_pat() -> str:
             pass
 
     if not pat:
-        # Check if local instance — PAT not needed
-        try:
-            url = _resolve_url()
-            if _is_local_url(url):
-                return ""  # empty PAT = guest mode
-        except RuntimeError:
-            pass
         raise RuntimeError(
             f"Missing CAIDO_PAT. Set as env var or in {_HERMES_ENV}. "
-            "If your Caido instance is local (127.0.0.1:8080), no PAT is needed — "
-            "the plugin will connect as guest automatically. "
-            "Otherwise, load the caido:utils skill and run auth.setup() to configure credentials."
+            "Load the caido:utils skill and run auth.setup() to configure credentials."
         )
     return pat
 
@@ -427,22 +406,15 @@ async def _close_session() -> None:
     _current_loop = None
 
 
-async def _ensure_auth() -> tuple[str, str | None]:
+async def _ensure_auth() -> tuple[str, str]:
     """Ensure we have a valid access token. Returns (url, access_token).
 
-    For local instances (127.0.0.1:8080), returns (url, None) to connect
-    as guest without authentication headers.
+    All instances require authentication — including local ones. Order:
+    cached token → refresh → full device code flow.
     """
     global _url, _access_token
 
     _url = _resolve_url()
-
-    # Local instance — no auth needed
-    if _is_local_url(_url):
-        # Still try cached token in case one exists (user may have authed before)
-        if _load_cached_token() and _access_token:
-            return _url, _access_token
-        return _url, None
 
     # Try cached token
     if _load_cached_token() and _access_token:
@@ -453,12 +425,7 @@ async def _ensure_auth() -> tuple[str, str | None]:
         return _url, _access_token
 
     # Full device code flow
-    pat = _resolve_pat()
-    if not pat:
-        raise RuntimeError(
-            "Cannot authenticate to remote Caido instance without a PAT. "
-            "Load the caido:utils skill and run auth.setup() to configure credentials."
-        )
+    pat = _resolve_pat()  # raises RuntimeError if missing
     await _do_device_flow(_url, pat)
     if not _access_token:
         raise RuntimeError("Failed to acquire access token")
