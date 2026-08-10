@@ -4,7 +4,7 @@ Hermes Agent plugin for the [Caido](https://caido.io) HTTP proxy. Search history
 
 ## What It Does
 
-**12 native tools** for the operations an agent-operator performs:
+**13 native tools** for the operations an agent-operator performs:
 
 | Tool | Description |
 |---|---|
@@ -15,6 +15,7 @@ Hermes Agent plugin for the [Caido](https://caido.io) HTTP proxy. Search history
 | `caido_get` | Get request/response by ID — accepts Request.id **or** the UI history-table number |
 | `caido_findings` | List security findings |
 | `caido_create_finding` | Create a security finding |
+| `caido_delete_finding` | Delete a security finding |
 | `caido_replay` | Replay a request, optionally edited (path/method/headers/body) |
 | `caido_automate` | Run an automate campaign in one call (source + target + payloads + strategy) |
 | `caido_automate_status` | Poll automate task status |

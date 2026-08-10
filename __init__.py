@@ -1,8 +1,8 @@
 """Hermes Agent Caido plugin — registration.
 
 Registers tools for interacting with the Caido HTTP proxy:
-onboard, search, recent, get, findings, create_finding, health,
-auth_setup, export_curl, replay, automate, automate_status.
+onboard, search, recent, get, findings, create_finding, delete_finding,
+health, auth_setup, export_curl, replay, automate, automate_status.
 
 Design (tool-search era): every operation an agent-operator performs is a
 registered tool. Tool descriptions carry the decisions; one recipe skill
@@ -42,6 +42,7 @@ def register(ctx) -> None:  # noqa: ANN001 — plugin context type
         # Findings
         ("caido_findings",       schemas.CAIDO_FINDINGS,       tools.handle_findings,       "List security findings"),
         ("caido_create_finding", schemas.CAIDO_CREATE_FINDING, tools.handle_create_finding, "Create a security finding"),
+        ("caido_delete_finding", schemas.CAIDO_DELETE_FINDING, tools.handle_delete_finding, "Delete a security finding"),
         # Operations
         ("caido_replay",         schemas.CAIDO_REPLAY,         tools.handle_replay,         "Replay a request, optionally edited"),
         ("caido_automate",       schemas.CAIDO_AUTOMATE,       tools.handle_automate,       "Run an automate campaign"),

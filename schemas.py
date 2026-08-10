@@ -3,10 +3,10 @@
 Each schema is a JSON Schema object that tells the LLM when and how to call
 the corresponding tool.  All tools return JSON strings.
 
-Registered tools (12):
+Registered tools (13):
   caido_onboard, caido_search, caido_recent, caido_get,
-  caido_findings, caido_create_finding, caido_health,
-  caido_auth_setup, caido_export_curl, caido_replay,
+  caido_findings, caido_create_finding, caido_delete_finding,
+  caido_health, caido_auth_setup, caido_export_curl, caido_replay,
   caido_automate, caido_automate_status
 
 The caido:caido skill is the agent-operator cookbook — shared-workspace
@@ -187,6 +187,27 @@ CAIDO_CREATE_FINDING = {
             },
         },
         "required": ["title", "request_id"],
+    },
+}
+
+CAIDO_DELETE_FINDING = {
+    "name": "caido_delete_finding",
+    "description": (
+        "Delete a security finding from the Caido project by its finding id "
+        "(from caido_findings or caido_create_finding output). Returns "
+        "{deleted: true, finding_id} on success, or {deleted: false} if the "
+        "finding doesn't exist. Use to remove false positives, test artifacts, "
+        "or stale findings the user won't want to keep in the shared workspace."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "finding_id": {
+                "type": "string",
+                "description": "ID of the finding to delete, from caido_findings or caido_create_finding output.",
+            },
+        },
+        "required": ["finding_id"],
     },
 }
 

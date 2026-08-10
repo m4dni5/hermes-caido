@@ -11,7 +11,7 @@ from graphql.replay import (
     replay, sessions, create_session, collections,
     rename_session, delete_sessions,
 )
-from graphql.findings import list_findings, get_finding, create_finding, update_finding
+from graphql.findings import list_findings, get_finding, create_finding, update_finding, delete_finding
 from graphql.management import (
     scopes, get_scope, create_scope, delete_scope,
     filters, create_filter, delete_filter,
@@ -169,6 +169,27 @@ async def handle_create_finding(args: dict, **kwargs) -> str:
         return json.dumps(result, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})
+
+
+async def handle_delete_finding(args: dict, **kwargs) -> str:
+    try:
+        finding_id = args.get("finding_id")
+        if not finding_id:
+            return json.dumps({"error": "finding_id is required"}, indent=2)
+        result = await delete_finding(finding_id=finding_id)
+        if not result.get("deletedIds"):
+            return json.dumps({
+                "deleted": False,
+                "finding_id": finding_id,
+                "message": "Finding not found or already deleted.",
+            }, indent=2)
+        return json.dumps({
+            "deleted": True,
+            "finding_id": finding_id,
+            "deletedIds": result.get("deletedIds"),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, indent=2)
 
 
 async def handle_health(args: dict, **kwargs) -> str:

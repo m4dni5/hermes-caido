@@ -10,6 +10,7 @@ provides_tools:
   - caido_get
   - caido_findings
   - caido_create_finding
+  - caido_delete_finding
   - caido_replay
   - caido_automate
   - caido_automate_status

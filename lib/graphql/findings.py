@@ -63,6 +63,14 @@ mutation UpdateFinding($id: ID!, $input: UpdateFindingInput!) {
 }
 """ + FINDING_FRAGMENT
 
+DELETE_FINDINGS_MUTATION = """
+mutation DeleteFindings($input: DeleteFindingsInput!) {
+  deleteFindings(input: $input) {
+    deletedIds
+  }
+}
+"""
+
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
@@ -150,3 +158,30 @@ async def update_finding(finding_id, title=None, description=None, severity=None
     if result.get("error"):
         return {"error": result["error"]}
     return result.get("finding", {})
+
+
+async def delete_finding(finding_id, client=None):
+    """Delete a single finding by ID.
+
+    Returns:
+        Dict with ``deletedIds`` list (or ``error``). Empty list means the
+        finding didn't exist.
+    """
+    data = await graphql(
+        DELETE_FINDINGS_MUTATION,
+        variables={"input": {"ids": [finding_id]}},
+    )
+    return data.get("deleteFindings", {})
+
+
+async def delete_findings(finding_ids, client=None):
+    """Delete multiple findings by ID (also supports delete-by-reporter).
+
+    Returns:
+        Dict with ``deletedIds`` list (or ``error``).
+    """
+    data = await graphql(
+        DELETE_FINDINGS_MUTATION,
+        variables={"input": {"ids": finding_ids}},
+    )
+    return data.get("deleteFindings", {})

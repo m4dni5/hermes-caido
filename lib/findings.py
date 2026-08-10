@@ -13,6 +13,8 @@ from graphql.findings import (
     get_finding as _get_finding,
     create_finding as _create_finding,
     update_finding as _update_finding,
+    delete_finding as _delete_finding,
+    delete_findings as _delete_findings,
 )
 
 
@@ -44,3 +46,16 @@ def update_finding(
 ) -> dict:
     """Update a finding."""
     return sync_run(_update_finding, finding_id=finding_id, title=title, description=description, severity=severity)
+
+
+def delete_finding(finding_id: str) -> dict:
+    """Delete a finding by ID.
+
+    Returns dict with ``deletedIds``; empty list means it didn't exist.
+    """
+    return sync_run(_delete_finding, finding_id=finding_id)
+
+
+def delete_findings(finding_ids: list[str]) -> dict:
+    """Delete multiple findings by ID."""
+    return sync_run(_delete_findings, finding_ids=finding_ids)

@@ -6,7 +6,7 @@ A Hermes Agent plugin for the [Caido](https://caido.io) HTTP proxy. Enables AI a
 
 ```
 hermes-caido/
-├── __init__.py              # Plugin registration — 12 tools + 1 skill
+├── __init__.py              # Plugin registration — 13 tools + 1 skill
 ├── plugin.yaml              # Plugin metadata (name, version, env vars)
 ├── schemas.py               # JSON Schema for registered tools
 ├── caido_tools.py           # Async tool handlers (called by Hermes)
@@ -14,7 +14,7 @@ hermes-caido/
 ├── lib/
 │   ├── sync.py              # sync_run() helper — asyncio.run() + close()
 │   ├── http_requests.py     # Sync wrappers: search, recent, get, export_curl, resolve_request_id
-│   ├── findings.py          # Sync wrappers: list, get, create, update
+│   ├── findings.py          # Sync wrappers: list, get, create, update, delete
 │   ├── replay.py            # Sync wrappers: sessions, entries, replay
 │   ├── management.py        # Sync wrappers: scopes, filters, envs, projects
 │   ├── automate.py          # Sync wrappers: sessions, tasks, update_session
@@ -24,7 +24,7 @@ hermes-caido/
 │   └── graphql/
 │       ├── client.py        # Core: aiohttp singleton, GraphQL transport, OAuth2 device flow
 │       ├── http_requests.py # Async: search, recent, get, export_curl, ID resolver
-│       ├── findings.py      # Async: findings CRUD
+│       ├── findings.py      # Async: findings CRUD + delete
 │       ├── replay.py        # Async: replay sessions/entries
 │       ├── management.py    # Async: scopes, filters, envs, projects, hosted_files
 │       ├── automate.py      # Async: automate sessions/tasks, update_session
@@ -48,7 +48,7 @@ Skills call the sync wrappers in `execute_code` blocks. Tool handlers in `caido_
 Hermes uses progressive tool disclosure: all non-core tools sit behind
 `tool_search`/`tool_describe`/`tool_call`, and schemas load on demand. The
 context-cost rationale for hiding operations in skills is gone — every
-operation an agent-operator performs is a registered tool (12 total), and
+operation an agent-operator performs is a registered tool (13 total), and
 descriptions carry the decisions. The one remaining skill (`caido:caido`)
 is the agent-operator cookbook — shared-workspace guidance, tool map,
 replay/automate decisions, pitfalls — the judgment layer that doesn't fit a

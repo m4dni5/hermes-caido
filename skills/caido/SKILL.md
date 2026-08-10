@@ -47,6 +47,7 @@ project, scopes, recent hosts, and a workspace note. Then:
 | Inspect a request/response pair | `caido_get(request_id)` — accepts UI numbers |
 | Record a vulnerability | `caido_create_finding(title, request_id, severity)` |
 | Review recorded findings | `caido_findings` |
+| Remove a finding | `caido_delete_finding(finding_id)` — false positives, test artifacts |
 | Replay once (new session) | `caido_replay(request_id, ...edits)` |
 | Iterate in one session | `caido_replay(session_id, ...edits)` — appends to history |
 | Run a campaign (one placeholder) | `caido_automate(request_id, target, payloads, strategy)` |
