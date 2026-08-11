@@ -1,10 +1,19 @@
-# Automate via lib/ — multi-placeholder & advanced campaigns
+# Automate via lib/ — advanced campaigns the tool doesn't cover
 
-`caido_automate` (the tool) handles the single-slot case — one placeholder,
-one payload list. Go to `lib/` when you need more control: MATRIX/PARALLEL
-strategies (one payload set per placeholder), custom placeholder offsets,
-or raw session editing. All operations below verified live against a Caido
-0.57.x instance (2026-08).
+## When to use this
+
+`caido_automate` (the tool) covers the single-slot case: one placeholder,
+one payload list, `ALL`/`SEQUENTIAL` strategies. Escape to `lib/` when you
+need:
+
+- **MATRIX / PARALLEL** strategies — one payload set *per placeholder*
+- **Custom placeholder offsets** — a target that isn't a simple `FUZZ` swap
+- **Parameter-aware placeholders** — target a named param or header directly
+- **Session lifecycle** — rename, duplicate, delete, pause/resume tasks
+- **Raw session editing** — full control over the raw request bytes
+
+If the tool's single-slot case covers your need, use the tool — it's fewer
+calls and validated.
 
 ## Setup
 
@@ -14,7 +23,22 @@ sys.path.insert(0, os.path.join(os.environ["CAIDO_PLUGIN_DIR"], "lib"))
 import automate, placeholders, payloads
 ```
 
-## FUZZ slot pattern (recommended)
+## Operations
+
+### Session lifecycle
+
+```python
+automate.sessions()                                    # list all sessions
+session = automate.create_session(request_id="5218")   # seed from a proxy request
+automate.rename_session(session_id, "new-name")
+automate.duplicate_session(session_id)                 # copy a session
+automate.delete_session(session_id)
+```
+
+`create_session()` without `request_id` makes an empty session — you'll
+need `update_session` with raw + connection before it can run.
+
+### FUZZ slot pattern (recommended)
 
 Embed the literal token `FUZZ` at the exact target location in the raw
 request, then use its byte range as the placeholder. Payloads become bare
@@ -42,9 +66,9 @@ automate.update_session(session_id,
 result = automate.start_task(session_id)
 ```
 
-## Parameter-aware placeholders (no FUZZ token)
+### Parameter-aware placeholders (no FUZZ token)
 
-When you'd rather target a parameter than a raw byte range:
+Target a parameter by name instead of a raw byte range:
 
 ```python
 raw = base64.b64decode(full["raw"]).decode("utf-8")
@@ -56,33 +80,53 @@ payload_input = payloads.build_payload_input([["val1", "val2"]])
 `placeholder_for_header(raw, "X-Forwarded-For")` works the same way for
 header values.
 
-## Strategy × payload sets
-
-| Strategy | Sets needed | Constraint |
-|---|---|---|
-| `ALL` | 1 | Each value replaces ALL placeholders |
-| `SEQUENTIAL` | 1 | Each value replaces placeholders one at a time |
-| `MATRIX` | N (one per placeholder) | Cartesian product |
-| `PARALLEL` | N (one per placeholder) | Sets must have equal length |
-
-MATRIX/PARALLEL need one payload set *per placeholder* — pass a list of
-lists to `build_payload_input`:
+### Payload builders
 
 ```python
 payloads.build_payload_input([["a", "b"], ["1", "2"]])   # 2 placeholders, 2 sets
+payloads.build_number_payload(1, 100, increments=1, min_length=4)  # sequential numbers (IDOR)
+payloads.add_prefix(payload_input, "http://127.0.0.1/")  # mutate a payload input
+payloads.add_suffix(payload_input, "\"")
 ```
+
+`build_number_payload` is the engine for sequential enumeration — the
+skill's IDOR pattern. Zero-pad with `min_length`.
+
+### Task control & results
+
+```python
+automate.list_tasks()                                   # list recent tasks
+automate.cancel_task(task_id)                           # stop a run
+automate.pause_task(task_id)
+automate.resume_task(task_id)
+automate.get_entry_requests(entry_id, limit=50, order=None, filter_code=None)
+```
+
+`get_entry_requests` is the lib-level result retrieval (the same engine
+`caido_automate_status` uses):
+- `order`: `{"by": "RESP_STATUS_CODE", "ordering": "DESC"}` — also
+  `RESP_LENGTH`, `POSITION`
+- `filter_code`: an HTTPQL string to filter the entry's requests
+- Returns `{entry, count, results}` — each result has `sequence_id`,
+  `payloads`, and the request/response pair
 
 ## Rules
 
-1. `update_session` replaces the entire settings object — always fetch the
-   session first, then pass `connection` through even if unchanged.
-2. `settings` needs all fields the API requires; since v0.6.0 the library
-   fills safe defaults (`_complete_settings()`) for what you omit
-   (redirect, retryOnFailure, extractors, etc.).
-3. URL-encoding: `build_payload_input(payload_sets, url_encode=True)`
-   (default) attaches a urlEncode preprocessor with the UI charset —
-   right for URL/path/query fuzzing. Pass `url_encode=False` for
-   body/JSON/header fuzzing where literals matter.
-4. Poll results with the **session id** (`caido_automate_status(session_id)`
-   or `automate.get_entry_requests(entry_id)`) — tasks drop off the recent
-   list after completion but sessions/entries persist.
+1. **`update_session` replaces the entire settings object** — always fetch
+   the session first, then pass `connection` through even if unchanged.
+2. **Settings defaults are filled for you** — since v0.6.0 the library
+   completes `redirect`, `retryOnFailure`, `extractors`, etc.
+   (`_complete_settings()`) when you omit them.
+3. **URL-encoding is on by default** — `build_payload_input(..., url_encode=True)`
+   attaches a urlEncode preprocessor with the UI charset. Pass
+   `url_encode=False` for body/JSON/header fuzzing where literals matter.
+4. **Poll with the session id** — `caido_automate_status(session_id)` or
+   `automate.get_entry_requests(entry_id)`. Tasks drop off the recent list
+   after completion but sessions/entries persist.
+5. **Deleting a session with a live task fails** — cancel the task first
+   (`cancel_task`), then `delete_session`.
+
+## Verified
+
+All operations verified live against a Caido 0.57.x instance (2026-08);
+payload builders checked against the library source.

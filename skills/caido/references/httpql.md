@@ -1,8 +1,14 @@
-# HTTPQL Reference — Caido query language
+# HTTPQL — the caido_search query language
+
+## When to use this
+
+HTTPQL is the filter language for proxy traffic. The quick facts in
+SKILL.md cover the common cases; load this reference when you need the
+full field/operator surface — or when you're passing HTTPQL into a
+library function (`create_filter`, `get_entry_requests(filter_code=...)`)
+and need exact syntax.
 
 Authoritative source: https://docs.caido.io/app/reference/httpql
-All statements below verified live against a Caido 0.57.x instance via
-`caido_search` (2026-08).
 
 ## Syntax
 
@@ -125,3 +131,8 @@ Write the expansion explicitly in `caido_search` queries.
 - Endpoints by extension: `req.ext.eq:".js" OR req.ext.eq:".json"`
 - HTTPS only: `req.tls.eq:true`
 - Regex on paths: `req.path.regex:"/v[0-9]"`
+
+## Verified
+
+Fields, operators, and patterns verified live against a Caido 0.57.x
+instance via `caido_search` (2026-08).

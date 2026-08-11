@@ -69,11 +69,12 @@ first — the request is probably there but outside it. `caido_onboard` reports
 
 ## Scope & project lifecycle (via lib/)
 
-Scope and project creation/editing are **not tool surface** — but if the user
-asks you to create, rename, update, or delete a scope or project, **do it —
-don't push them to the UI.** The full CRUD (scopes, projects, filters,
-environments, hosted files) lives in `lib/management.py`. Verified usage:
-load `skill_view("caido:caido", "references/management.md")`.
+**Escape hatch:** the tools only *read* management state — `caido_onboard`
+lists scopes, `caido_search`/`caido_recent` filter by `scope_id`. There is
+no tool for creating, renaming, updating, or deleting scopes, projects,
+filters, environments, or hosted files. When the user asks for any of
+those, **do it — don't push them to the UI** — via `lib/management.py`:
+`skill_view("caido:caido", "references/management.md")`.
 
 After creating/editing a scope the user wants active, re-run `caido_onboard`
 (or call `set_active_scope` from `lib/http_requests.py`) so search/recent pick
@@ -172,9 +173,10 @@ structure stays baked into the template.
 caido_automate(request_id="5218", target="id=42", payloads=["1","2","3","admin"], strategy="ALL")
 ```
 
-For multi-placeholder / advanced config (MATRIX, PARALLEL, custom
-placeholders, raw session editing) the tool doesn't go deep enough — use
-`lib/` via execute_code. Verified workflow:
+**Escape hatch:** the tool covers one placeholder + one payload list
+(ALL/SEQUENTIAL). For MATRIX/PARALLEL (N sets), custom placeholder
+offsets, parameter-aware placeholders, or session lifecycle
+(rename/duplicate/delete/pause/resume), use `lib/` via execute_code:
 `skill_view("caido:caido", "references/automate-lib.md")`.
 
 ## Results — what the run produced
@@ -248,10 +250,14 @@ handle. If the target is slow, results may show `error/no-response` with a
 
 ## HTTPQL — the caido_search query language
 
+**Escape hatch:** `caido_search`'s `query` param takes HTTPQL. The quick
+facts below cover common cases; load the full reference (all fields,
+operators, verified patterns) when you need the complete surface —
+`skill_view("caido:caido", "references/httpql.md")`. The same language
+feeds library filters (`create_filter`, `get_entry_requests(filter_code=...)`).
+
 Syntax: `namespace.field.operator:value` (e.g. `req.path.cont:"/admin"`).
-String values are quoted; integers and booleans are not. Full field and
-operator tables, plus verified patterns: load the reference
-`skill_view("caido:caido", "references/httpql.md")`.
+String values are quoted; integers and booleans are not.
 
 Key facts (verified against the live 0.57.x schema):
 
