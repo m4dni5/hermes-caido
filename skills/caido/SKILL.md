@@ -280,9 +280,43 @@ handle. If the target is slow, results may show `error/no-response` with a
     `caido_replay` passes edits verbatim (encode URL edits yourself),
     `caido_automate` URL-encodes payloads by default.
 
-## HTTPQL Quick Reference (for caido_search / result filtering)
+## HTTPQL — the caido_search query language
 
-String fields use quoted values; integers unquoted. No `NOT` — use `ne`,
-`ncont`, `nlike`, `nregex`. Common: `req.host.cont:"api"`,
-`req.path.cont:"/admin"`, `req.method.eq:"POST"`, `resp.code.gte:400`,
-`resp.len.gt:100000`, `resp.roundtrip.gt:5000`.
+Syntax: `namespace.field.operator:value` (e.g. `req.path.cont:"/admin"`).
+String values are quoted; integers and booleans are not. Full field and
+operator tables, plus verified patterns: load the reference
+`skill_view("caido:caido", "references/httpql.md")`.
+
+The traps that burn sessions (all verified — these fail with "Invalid
+HTTPQL query"):
+
+1. **No `NOT`** — negate with `ncont` / `nlike` / `ne` / `nregex`.
+2. **No body/header fields** — `req.body`, `resp.body`, `req.header.value`,
+   `resp.header.value` don't exist. Search them via `req.raw.cont` /
+   `resp.raw.cont` with the literal substring (`resp.raw.cont:"error"` for
+   stack traces, `resp.raw.cont:"Set-Cookie:"` for cookies).
+3. **Status field is `resp.code`, not `resp.status`** — and a bare
+   `req.method:"GET"` without an operator is invalid: write
+   `req.method.eq:"GET"`.
+4. **`cont` is case-insensitive; `eq`/`ne` are case-sensitive**; `ext`
+   needs a leading dot (`req.ext.eq:".js"`); regex is Rust-flavored.
+
+`AND` binds tighter than `OR` — parenthesize (`(req.method.eq:"POST" OR
+req.method.eq:"PUT") AND resp.code.gte:400`).
+
+Verified patterns:
+
+- Errors: `resp.code.gte:400 AND resp.code.lt:600`
+- Slow responses: `resp.roundtrip.gt:5000`; large: `resp.len.gt:100000`
+- Tokens: `resp.raw.cont:"eyJ"` (JWT), `resp.raw.cont:"AKIA"` (AWS key)
+- Missing security header: `resp.raw.ncont:"Content-Security-Policy:"`
+- Admin paths: `req.path.cont:"/admin" OR req.path.cont:"/wp-admin"`
+- Open redirect: `req.query.cont:"redirect=" OR req.query.cont:"next="`
+- Exposed files: `req.path.cont:".git" OR req.path.cont:".env"`
+- Regex on paths: `req.path.regex:"/v[0-9]"`
+
+For a browserable query library, see the `rikosec/httpql-cheatsheet`
+repo — but its syntax has errors against the current schema (uses `NOT`,
+`resp.status`, bare `req.method:"GET"`, and `req.body`/`resp.body`
+fields). Prefer the reference file or the official docs at
+https://docs.caido.io/app/reference/httpql.
