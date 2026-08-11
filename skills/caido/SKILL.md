@@ -71,24 +71,9 @@ first — the request is probably there but outside it. `caido_onboard` reports
 
 Scope and project creation/editing are **not tool surface** — but if the user
 asks you to create, rename, update, or delete a scope or project, **do it —
-don't push them to the UI.** The full CRUD lives in `lib/management.py`
-(sync wrappers over `lib/graphql/management.py`):
-
-```python
-import os, sys
-sys.path.insert(0, os.path.join(os.environ["CAIDO_PLUGIN_DIR"], "lib"))
-import management
-
-management.scopes()                                  # list
-management.get_scope("1")                            # one scope by id
-management.create_scope("new-target", allow=["*.example.com"])   # create
-management.update_scope("1", allowlist=["*.example.com"], denylist=[])  # edit
-management.rename_scope("1", "renamed")
-management.delete_scope("1")
-management.projects()                                # list
-management.create_project("engagement-42")           # create
-management.delete_project("project-id")
-```
+don't push them to the UI.** The full CRUD (scopes, projects, filters,
+environments, hosted files) lives in `lib/management.py`. Verified usage:
+load `skill_view("caido:caido", "references/management.md")`.
 
 After creating/editing a scope the user wants active, re-run `caido_onboard`
 (or call `set_active_scope` from `lib/http_requests.py`) so search/recent pick
@@ -185,31 +170,12 @@ structure stays baked into the template.
 ```python
 # via the tool — simplest (one placeholder, one payload list)
 caido_automate(request_id="5218", target="id=42", payloads=["1","2","3","admin"], strategy="ALL")
-
-# via lib/ only for multi-placeholder / advanced config (MATRIX, PARALLEL,
-# custom placeholders beyond one FUZZ slot). The tool does the single-slot
-# case; go to lib when you need more control.
-import base64
-import automate, placeholders, payloads
-
-session = automate.create_session(request_id="5218")
-session_id = session["id"]
-full = automate.get_session(session_id)
-raw = base64.b64decode(full["raw"]).decode("utf-8")
-
-template = raw.replace("id=42", "id=FUZZ")
-ranges = placeholders.find_value(template, "FUZZ")  # byte offsets
-
-automate.update_session(session_id,
-    raw=template,
-    connection={"host": full["connection"]["host"], "port": full["connection"]["port"], "isTLS": full["connection"]["isTLS"]},
-    settings={
-        "placeholders": ranges,
-        "payloads": payloads.build_payload_input([["1", "2", "3", "admin"]]),
-        "strategy": "ALL",
-    })
-result = automate.start_task(session_id)
 ```
+
+For multi-placeholder / advanced config (MATRIX, PARALLEL, custom
+placeholders, raw session editing) the tool doesn't go deep enough — use
+`lib/` via execute_code. Verified workflow:
+`skill_view("caido:caido", "references/automate-lib.md")`.
 
 ## Results — what the run produced
 
@@ -287,17 +253,14 @@ String values are quoted; integers and booleans are not. Full field and
 operator tables, plus verified patterns: load the reference
 `skill_view("caido:caido", "references/httpql.md")`.
 
-The traps that burn sessions (all verified — these fail with "Invalid
-HTTPQL query"):
+Key facts (verified against the live 0.57.x schema):
 
-1. **No `NOT`** — negate with `ncont` / `nlike` / `ne` / `nregex`.
-2. **No body/header fields** — `req.body`, `resp.body`, `req.header.value`,
-   `resp.header.value` don't exist. Search them via `req.raw.cont` /
-   `resp.raw.cont` with the literal substring (`resp.raw.cont:"error"` for
-   stack traces, `resp.raw.cont:"Set-Cookie:"` for cookies).
-3. **Status field is `resp.code`, not `resp.status`** — and a bare
-   `req.method:"GET"` without an operator is invalid: write
-   `req.method.eq:"GET"`.
+1. **Negate with `ncont` / `nlike` / `ne` / `nregex`** — there is no `NOT`.
+2. **Bodies and headers live in `raw`** — search them with `req.raw.cont` /
+   `resp.raw.cont` (`resp.raw.cont:"error"` for stack traces,
+   `resp.raw.cont:"Set-Cookie:"` for cookies).
+3. **Status code is `resp.code`** — and always write the operator:
+   `req.method.eq:"GET"` (bare `req.method:"GET"` is invalid).
 4. **`cont` is case-insensitive; `eq`/`ne` are case-sensitive**; `ext`
    needs a leading dot (`req.ext.eq:".js"`); regex is Rust-flavored.
 
@@ -315,8 +278,6 @@ Verified patterns:
 - Exposed files: `req.path.cont:".git" OR req.path.cont:".env"`
 - Regex on paths: `req.path.regex:"/v[0-9]"`
 
-For a browserable query library, see the `rikosec/httpql-cheatsheet`
-repo — but its syntax has errors against the current schema (uses `NOT`,
-`resp.status`, bare `req.method:"GET"`, and `req.body`/`resp.body`
-fields). Prefer the reference file or the official docs at
+For more patterns, see `rikosec/httpql-cheatsheet` on GitHub (a
+browserable query library) or the official reference at
 https://docs.caido.io/app/reference/httpql.
