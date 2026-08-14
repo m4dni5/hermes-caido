@@ -7,8 +7,8 @@ Usage:
 """
 
 from __future__ import annotations
-from sync import sync_run
-from graphql.management import (
+from .sync import sync_run
+from .graphql.management import (
     scopes as _scopes,
     get_scope as _get_scope,
     create_scope as _create_scope,

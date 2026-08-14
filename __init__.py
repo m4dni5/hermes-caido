@@ -19,15 +19,34 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from . import schemas, caido_tools as tools
+# schemas is flat (no package-relative imports), so importing it at module
+# level works both under the framework loader (hermes_plugins.caido) and
+# when pytest imports this __init__.py as a bare module. caido_tools has
+# package-relative lib imports, so it's imported lazily inside register()
+# where the loader always provides the correct package context.
+#
+# The try/except covers the two load contexts: relative under the framework
+# loader (namespaced package, __package__ set), absolute fallback when
+# pytest imports this file as a bare module (project dir has a hyphen, so
+# it can't be a real package parent).
+try:
+    from . import schemas
+except ImportError:
+    import sys  # noqa: PLC0415
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    import schemas  # noqa: PLC0415
 
 logger = logging.getLogger(__name__)
 
 
 def register(ctx) -> None:  # noqa: ANN001 — plugin context type
     """Register Caido tools with the Hermes tool registry."""
+    from . import caido_tools as tools
+
     # Expose plugin path for skills and auth helper — works under any profile
     import os
+
     plugin_path = ctx.manifest.path or str(Path(__file__).parent)
     os.environ["CAIDO_PLUGIN_DIR"] = plugin_path
 

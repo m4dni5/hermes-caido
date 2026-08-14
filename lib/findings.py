@@ -7,8 +7,8 @@ Usage:
 """
 
 from __future__ import annotations
-from sync import sync_run
-from graphql.findings import (
+from .sync import sync_run
+from .graphql.findings import (
     list_findings as _list_findings,
     get_finding as _get_finding,
     create_finding as _create_finding,

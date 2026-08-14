@@ -13,8 +13,8 @@ they know the UI well; the library is the escape hatch.
 
 ```python
 import os, sys
-sys.path.insert(0, os.path.join(os.environ["CAIDO_PLUGIN_DIR"], "lib"))
-import management
+sys.path.insert(0, os.environ["CAIDO_PLUGIN_DIR"])
+from lib import management
 ```
 
 The module exposes sync wrappers over `lib/graphql/management.py`. Every

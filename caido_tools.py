@@ -1,27 +1,30 @@
 """Async tool handlers for Hermes Agent Caido plugin."""
 
 import json
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent / "lib"))
-
-from graphql.http_requests import search, recent, get, get_response, export_curl
-from graphql.replay import (
+# Package-relative imports into the lib/ package. The framework loader
+# imports this module as hermes_plugins.caido.caido_tools (a namespaced
+# package with __path__ set to the plugin dir), so ``.lib`` resolves
+# without any sys.path manipulation. Do NOT revert to sys.path.insert +
+# top-level ``from graphql...``: it mutates global sys.path and imports
+# generic names that can collide with stdlib/third-party modules.
+from .lib.graphql.http_requests import search, recent, get, get_response, export_curl
+from .lib.graphql.replay import (
     replay, sessions, create_session, collections,
     rename_session, delete_sessions,
 )
-from graphql.findings import list_findings, get_finding, create_finding, update_finding, delete_finding
-from graphql.management import (
+from .lib.graphql.findings import list_findings, get_finding, create_finding, update_finding, delete_finding
+from .lib.graphql.management import (
     scopes, get_scope, create_scope, delete_scope,
     filters, create_filter, delete_filter,
     environments, create_environment, delete_environment,
     projects, create_project, delete_project,
     hosted_files, tasks, cancel_task,
 )
-from graphql.auth import setup as _auth_setup
-from graphql.client import health, graphql
-from output import format_entry_compact, format_response
+from .lib.graphql.auth import setup as _auth_setup
+from .lib.graphql.client import health, graphql
+from .lib.output import format_entry_compact, format_response
 
 import asyncio
 import os
@@ -76,7 +79,7 @@ async def _setup_via_subprocess(pat: str | None = None, url: str | None = None) 
         return {"error": f"Auth helper returned invalid JSON: {proc.stdout[:200]}"}
 
     # Reload the cached token into the running process
-    from graphql.client import _load_cached_token
+    from .lib.graphql.client import _load_cached_token
     os.environ["CAIDO_PAT"] = pat
     os.environ["CAIDO_URL"] = url
     _load_cached_token()
@@ -111,7 +114,7 @@ def _format(data: dict, args: dict) -> str:
 
 async def handle_search(args: dict, **kwargs) -> str:
     try:
-        from graphql.http_requests import _UNSET
+        from .lib.graphql.http_requests import _UNSET
         scope_id = args.get("scope_id")
         if scope_id is None:
             scope_id = _UNSET  # omitted → active scope
@@ -129,7 +132,7 @@ async def handle_search(args: dict, **kwargs) -> str:
 
 async def handle_recent(args: dict, **kwargs) -> str:
     try:
-        from graphql.http_requests import _UNSET
+        from .lib.graphql.http_requests import _UNSET
         scope_id = args.get("scope_id")
         if scope_id is None:
             scope_id = _UNSET  # omitted → active scope
@@ -164,7 +167,7 @@ async def handle_create_finding(args: dict, **kwargs) -> str:
         # Resolve a UI-visible metadata.id to the canonical Request.id — the
         # createFinding mutation keys on Request.id.
         if request_id:
-            from graphql.http_requests import resolve_request_id
+            from .lib.graphql.http_requests import resolve_request_id
             resolved = await resolve_request_id(request_id)
             if isinstance(resolved, dict) and "error" in resolved:
                 return json.dumps(resolved, indent=2)
@@ -248,7 +251,7 @@ async def handle_export_curl(args: dict, **kwargs) -> str:
 
 async def handle_replay(args: dict, **kwargs) -> str:
     try:
-        from graphql.replay import replay as replay_request, replay_with_edit, replay_in_session, get_session_result
+        from .lib.graphql.replay import replay as replay_request, replay_with_edit, replay_in_session, get_session_result
 
         session_id = args.get("session_id")
         request_id = args.get("request_id")
@@ -295,15 +298,15 @@ async def handle_replay(args: dict, **kwargs) -> str:
 async def handle_automate(args: dict, **kwargs) -> str:
     """One-call automate orchestration: source + target + payloads → running task."""
     try:
-        from graphql.automate import (
+        from .lib.graphql.automate import (
             create_session as automate_create_session,
             rename_session as automate_rename_session,
             update_session as automate_update_session,
             start_task as automate_start_task,
         )
-        from graphql.http_requests import get as get_request
-        from placeholders import find_value
-        from payloads import build_payload_input, validate_payload_config
+        from .lib.graphql.http_requests import get as get_request
+        from .lib.placeholders import find_value
+        from .lib.payloads import build_payload_input, validate_payload_config
 
         request_id = args["request_id"]
         target = args["target"]
@@ -392,7 +395,7 @@ async def handle_automate(args: dict, **kwargs) -> str:
 
 async def handle_automate_status(args: dict, **kwargs) -> str:
     try:
-        from graphql.automate import list_tasks as automate_list_tasks, get_entry_requests, get_session as automate_get_session
+        from .lib.graphql.automate import list_tasks as automate_list_tasks, get_entry_requests, get_session as automate_get_session
 
         task_id = args.get("task_id")
         entry_id = args.get("entry_id")
@@ -577,7 +580,7 @@ async def handle_onboard(args: dict, **kwargs) -> str:
         # Set the suggested scope as active for subsequent search/recent calls
         active_scope_id = None
         if suggested_scope:
-            from graphql.http_requests import set_active_scope, get_active_scope
+            from .lib.graphql.http_requests import set_active_scope, get_active_scope
             set_active_scope(suggested_scope["id"])
             active_scope_id = get_active_scope()
 

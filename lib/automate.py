@@ -7,8 +7,8 @@ Usage:
 """
 
 from __future__ import annotations
-from sync import sync_run
-from graphql.automate import (
+from .sync import sync_run
+from .graphql.automate import (
     sessions as _sessions,
     get_session as _get_session,
     create_session as _create_session,

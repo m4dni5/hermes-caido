@@ -17,10 +17,11 @@ import json
 import sys
 from pathlib import Path
 
-# Add lib to path
-sys.path.insert(0, str(Path(__file__).parent / "lib"))
+# Add the plugin root to sys.path so we can import the lib package by its
+# real name. (Run standalone, so no parent package for relative imports.)
+sys.path.insert(0, str(Path(__file__).parent))
 
-from graphql.client import _do_device_flow, _save_cached_token, _access_token, _refresh_token, _expires_at
+from lib.graphql.client import _do_device_flow, _save_cached_token, _access_token, _refresh_token, _expires_at
 
 
 async def main(pat: str, url: str) -> dict:

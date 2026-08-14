@@ -8,8 +8,8 @@ Usage:
 
 from __future__ import annotations
 from typing import Any
-from sync import sync_run
-from graphql.http_requests import (
+from .sync import sync_run
+from .graphql.http_requests import (
     _UNSET,
     search as _search,
     recent as _recent,

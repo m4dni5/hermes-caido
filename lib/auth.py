@@ -7,8 +7,8 @@ Usage:
 """
 
 from __future__ import annotations
-from sync import sync_run
-from graphql.auth import (
+from .sync import sync_run
+from .graphql.auth import (
     auth_status as _auth_status,
     clear_cache as _clear_cache,
     test_connection as _test_connection,

@@ -18,9 +18,9 @@ calls and validated.
 ## Setup
 
 ```python
-import os, sys, base64
-sys.path.insert(0, os.path.join(os.environ["CAIDO_PLUGIN_DIR"], "lib"))
-import automate, placeholders, payloads
+import os, sys
+sys.path.insert(0, os.environ["CAIDO_PLUGIN_DIR"])
+from lib import automate, placeholders, payloads
 ```
 
 ## Operations

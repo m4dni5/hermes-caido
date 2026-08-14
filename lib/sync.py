@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Callable, Coroutine, TypeVar
 
-from graphql.client import close as _close_client
+from .graphql.client import close as _close_client
 
 T = TypeVar("T")
 

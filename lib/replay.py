@@ -7,8 +7,8 @@ Usage:
 """
 
 from __future__ import annotations
-from sync import sync_run
-from graphql.replay import (
+from .sync import sync_run
+from .graphql.replay import (
     replay as _replay,
     replay_with_edit as _replay_with_edit,
     replay_in_session as _replay_in_session,

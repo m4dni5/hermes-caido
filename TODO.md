@@ -15,7 +15,7 @@
 - [ ] **Replay/automate session ID namespace ambiguity** — both domains return small numeric ids (`sessionId: 4` / `taskId: 3`) from separate counters. An agent holding a replay id and passing it to automate (or vice versa) hits not-found/wrong-object. Options: prefix tool output (`replay:4` / `automate:4`) or document the split in schema descriptions.
 - [ ] **Event loop conflicts in `caido_onboard` / `caido_health`** — auth helper subprocess workaround works, but health/graphql calls still run inside the agent's event loop. Only matters if a session reports flaky first-call behavior.
 - [ ] **Packaging** — `pip install -e .` for distribution (pyproject.toml exists, v0.7.0). Deferred: directory-plugin + symlink install works; packaging is for other profiles/hosts.
-- [ ] **Skills import via `import automate`** — remove `sys.path.insert` from the skill's execute_code examples once packaged. Low priority with one skill left.
+- [x] **Skills import via `from lib import ...`** — the old pattern (`sys.path.insert(0, .../lib)` + `import automate`) mutated sys.path and pulled generic top-level names. Skills now insert the plugin root (`sys.path.insert(0, os.environ["CAIDO_PLUGIN_DIR"])`) and import the `lib` package (`from lib import automate, placeholders, payloads`). Done 2026-08-14; examples updated in AGENTS.md, `skills/caido/references/automate-lib.md`, and `management.md`.
 
 ### Re-evaluate when triggers appear
 

@@ -115,8 +115,8 @@ Skills use `execute_code` to call library functions:
 
 ```python
 import os, sys
-sys.path.insert(0, os.path.join(os.environ["CAIDO_PLUGIN_DIR"], "lib"))
-import http_requests
+sys.path.insert(0, os.environ["CAIDO_PLUGIN_DIR"])
+from lib import http_requests
 
 results = http_requests.search(query='req.path.cont:"/api/"', limit=10)
 ```
@@ -127,7 +127,24 @@ python3 -m py_compile lib/graphql/client.py
 python3 -m py_compile caido_tools.py
 ```
 
+### Running the test suite
+The regression suite covers the two failure classes that have bitten these
+plugins: the framework-loader import behavior and schema sanitization. It
+needs the Hermes framework on `PYTHONPATH` for the sanitizer import.
+
+```bash
+PYTHONPATH=/path/to/hermes-agent \
+  /path/to/hermes/venv/bin/python -m pytest tests/ -q
+```
+
+Layout: `tests/test_plugin_load.py` (loader semantics, 13-tool
+registration, no-sys.path-mutation guard, sync-wrapper imports),
+`tests/test_schema_sanitizer.py` (schemas survive `sanitize_tool_schemas`
+with properties/required intact, no top-level combinators).
+
 ## Important Pitfalls
+
+0. **Import strategy — package-relative, never `sys.path` mutation in the framework path.** `caido_tools.py` and the `lib/*` sync wrappers use package-relative imports (`from .lib.graphql...`, `from .sync import`). Do NOT revert to `sys.path.insert(0, .../lib)` + bare `from graphql...` / `from output...`: it mutates the shared process's `sys.path` and pulls generic top-level names that can collide with stdlib/third-party modules. The framework loader imports the plugin as a namespaced package (`hermes_plugins.caido`) where relative imports resolve, so no path trickery is needed. Two special cases: `auth_helper.py` runs standalone (`python3 auth_helper.py`), so it inserts the plugin *root* on sys.path and imports `lib.graphql.client` (not the generic `graphql` name); the skill `execute_code` snippets insert `CAIDO_PLUGIN_DIR` and do `from lib import ...`. The root `__init__.py` has a try/except relative→absolute fallback because pytest imports it as a bare module (the dir name `hermes-caido` has a hyphen, invalid as a package name, so it can't be `tests`' parent) — keep that fallback.
 
 1. **`sync_run()` closes the session after each call** — `asyncio.run()` creates a fresh event loop, so the singleton session is always stale. Closing after each call is correct, not wasteful.
 
@@ -155,7 +172,8 @@ python3 -m py_compile caido_tools.py
 Skills import the library via:
 ```python
 import os, sys
-sys.path.insert(0, os.path.join(os.environ["CAIDO_PLUGIN_DIR"], "lib"))
+sys.path.insert(0, os.environ["CAIDO_PLUGIN_DIR"])
+from lib import http_requests, management, automate, replay, findings
 ```
 
 ## Future Work
