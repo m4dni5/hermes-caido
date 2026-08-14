@@ -1,185 +1,318 @@
-# AGENTS.md — hermes-caido
+# Hermes Plugin Development — Agent Notes (Master Playbook)
 
-A Hermes Agent plugin for the [Caido](https://caido.io) HTTP proxy. Enables AI agents to search proxy history, manage findings, replay requests, and run automate campaigns against live targets.
+The distilled, project-agnostic playbook for building and maintaining Hermes
+Agent plugins. It is a synthesis of the lessons learned across three real
+plugins — `hermes-caido`, `hermes-recall`, and `hermes-tmux` — with their
+individual project specifics removed. **This file holds no project-specific
+content**; the rationale for *this* project lives in `DESIGN.md` at the repo
+root.
 
-## Architecture
+## The plugin surface
+
+A Hermes plugin hooks into the agent through the registration capabilities on
+the `ctx` handed to `register(ctx)`:
+
+| Capability | API | What it adds |
+|---|---|---|
+| Tools | `ctx.register_tool(name, toolset, schema, handler, check_fn, emoji)` | Model-callable tools |
+| Hooks | `ctx.register_hook("post_tool_call", cb)` | Lifecycle events (pre/post LLM, session start/end, tool filter) |
+| Slash commands | `ctx.register_command(name, handler, description, args_hint)` | `/name` in CLI and gateway sessions |
+| CLI commands | `ctx.register_cli_command(name, help, setup_fn, handler_fn)` | `hermes <name> <subcommand>` from the terminal |
+| Auxiliary tasks | `ctx.register_auxiliary_task(key, defaults)` | Configurable sub-model task (`auxiliary.<key>` in config.yaml) |
+
+There is no subprocess substrate and no per-call execution model. Plugins do
+*not* shell out directly — they call the framework's existing tools via
+`ctx.dispatch_tool(name, args)`. That is the whole safety model: every
+dispatched call inherits the same approval, redaction, and interrupt pipelines
+as a direct tool call.
+
+**Slash commands** (`ctx.register_command`) take a `handler: Callable[[str],
+str | None]` — sync or async (the gateway awaits async handlers). The handler
+receives the raw argument string after the command name. To invoke a tool from
+a slash handler, use `ctx.dispatch_tool(...)` (parent-agent context wired up
+automatically); don't reach into framework internals. Conflicts with built-in
+commands are silently rejected with a warning — built-ins always win.
+
+**Overriding a built-in tool** (`ctx.register_tool(..., override=True)`) is a
+privileged capability: it needs the `tools.override` capability declared (and
+consented) plus `allow_tool_override: true` in config for non-bundled plugins.
+Prefer a non-conflicting tool name unless replacement is the explicit goal.
+
+**Group a plugin's tools under one toolset name.** Enabling/disabling a plugin
+is a per-toolset config change (`platform_toolsets.*`); registering each tool
+under its own toolset turns "enable the plugin" into an N-entry change that can
+drift. One `toolset` per plugin keeps enablement atomic. (This is a learned
+lesson — a plugin originally registered each tool under its own toolset and was
+refactored to a single one for exactly this reason.)
+
+## Plugin anatomy (flat directory plugin)
 
 ```
-hermes-caido/
-├── __init__.py              # Plugin registration — 13 tools + 1 skill
-├── plugin.yaml              # Plugin metadata (name, version, env vars)
-├── schemas.py               # JSON Schema for registered tools
-├── caido_tools.py           # Async tool handlers (called by Hermes)
-├── auth_helper.py           # Standalone auth flow (subprocess isolation)
-├── lib/
-│   ├── sync.py              # sync_run() helper — asyncio.run() + close()
-│   ├── http_requests.py     # Sync wrappers: search, recent, get, export_curl, resolve_request_id
-│   ├── findings.py          # Sync wrappers: list, get, create, update, delete
-│   ├── replay.py            # Sync wrappers: sessions, entries, replay
-│   ├── management.py        # Sync wrappers: scopes, filters, envs, projects
-│   ├── automate.py          # Sync wrappers: sessions, tasks, update_session
-│   ├── auth.py              # Sync wrappers: auth_status, setup, clear_cache
-│   ├── placeholders.py      # Placeholder helpers: find_value, placeholder_for_param/header
-│   ├── payloads.py          # Payload validation: strategy-aware, simpleList/number builders
-│   └── graphql/
-│       ├── client.py        # Core: aiohttp singleton, GraphQL transport, OAuth2 device flow
-│       ├── http_requests.py # Async: search, recent, get, export_curl, ID resolver
-│       ├── findings.py      # Async: findings CRUD + delete
-│       ├── replay.py        # Async: replay sessions/entries
-│       ├── management.py    # Async: scopes, filters, envs, projects, hosted_files
-│       ├── automate.py      # Async: automate sessions/tasks, update_session
-│       └── auth.py          # Async: auth_status, setup, clear_cache, test_connection
-└── skills/
-    └── caido/SKILL.md       # Agent-operator cookbook: shared workspace, tool map, replay/automate decisions, pitfalls, HTTPQL
+plugin.yaml      # name, version, description, provides_tools, requires_env
+__init__.py      # register(ctx) — wires tools + commands
+schemas.py       # tool JSON schemas (what the model reads)
+tools.py         # handlers (what runs)  — the docs' canonical name
+pyproject.toml   # pytest config (pythonpath = ["."]) so tests import w/o pip install
+tests/
 ```
 
-## Two-Layer Design
+- The loader imports `__init__.py` as a namespaced package
+  (`hermes_plugins.<name>`), so **relative imports** (`from . import schemas`)
+  resolve and the plugin never depends on cwd or `sys.path`.
+- pytest, by contrast, may import the root `__init__.py` as a bare module
+  (especially when the repo dir has a hyphen, which is invalid as a package
+  name, so it can't be `tests`' parent). That context has no parent package.
+  The standard fix is a `try: from . import schemas / except ImportError:
+  import schemas` in `__init__.py`. Both contexts are load-bearing — keep the
+  fallback.
+- `pyproject.toml` should add `.` to pytest's `pythonpath` so tests import the
+  package without a prior `pip install -e .`.
 
-Every domain follows the same pattern:
+## The ctx capture pattern
 
-1. **`lib/graphql/<domain>.py`** — async functions using raw GraphQL + aiohttp
-2. **`lib/<domain>.py`** — sync wrappers via `sync_run()` for skill consumption
-
-Skills call the sync wrappers in `execute_code` blocks. Tool handlers in `caido_tools.py` call the async functions directly.
-
-## Key Design Decisions
-
-### Tool-first (tool-search era)
-Hermes uses progressive tool disclosure: all non-core tools sit behind
-`tool_search`/`tool_describe`/`tool_call`, and schemas load on demand. The
-context-cost rationale for hiding operations in skills is gone — every
-operation an agent-operator performs is a registered tool (13 total), and
-descriptions carry the decisions. The one remaining skill (`caido:caido`)
-is the agent-operator cookbook — shared-workspace guidance, tool map,
-replay/automate decisions, pitfalls — the judgment layer that doesn't fit a
-tool schema.
-
-### Caido is the shared workspace
-The plugin's value is collaboration, not capability: most of what Caido does
-an agent can do faster in the terminal. Traffic replayed, automate runs, and
-findings created through the plugin appear in the Caido UI the user is
-watching — that's the shared surface. Tool descriptions, `caido_onboard`
-output, and the skill all carry the same guidance: **use Caido when the user
-should see or build on the work; use curl/ffuf for private exploration**. The
-plugin never claims to be the best automate engine — it's the best *visible* one.
-
-### Auth runs in a subprocess
-The Hermes agent's async context interferes with aiohttp WebSocket connections (inherited SSL state, nested event loops). The auth flow runs in `auth_helper.py` as a fresh process. The `caido_onboard` tool handles the happy path; `caido_auth_setup` handles auth setup/troubleshooting as a tool.
-
-### All instances require authentication
-Every Caido instance requires an access token — including local ones at `127.0.0.1:8080`. The client tries, in order: cached token → token refresh → full device code flow (PAT from `CAIDO_PAT` env/`.env`). There is no guest mode; an unauthenticated `requests` query returns `INVALID_TOKEN`. On auth failure, the tool guidance directs the agent to run `caido_auth_setup`.
-
-### Auth error guidance
-All error paths in tool handlers and the client layer include explicit guidance: **"Run caido_auth_setup"**. The agent should follow this instruction whenever a Caido tool returns an auth-related error.
-
-### No external SDK dependency (for now)
-We use raw GraphQL strings against Caido's v0.57.x schema. The community SDK (`caido-sdk-client`) is on 0.3.0 / schema proxy 0.57.1 but requires Python ≥ 3.12 (Hermes venv is 3.11) and lacks Automate session support. When the SDK catches up, we'll swap the GraphQL layer. The tool/skill interface is the stable contract.
-
-### ID namespace resolution (UI numbers)
-The Caido UI history table shows `metadata.id` (a group key), which differs from
-the GraphQL `Request.id`. `lib/graphql/http_requests.py` has a resolver that
-tries `request(id:)` and falls back to a `requestsByOffset` scan by
-`metadata.id`. `caido_get`, `caido_replay`, `caido_automate`, and
-`caido_export_curl` accept both namespaces automatically.
-
-### FUZZ slot pattern for placeholders
-Modify the raw request to embed `FUZZ` at the target location, then call `find_value(template, "FUZZ")` to get byte ranges. Payloads are bare data (`admin`, not `http://127.0.0.1/admin`). `caido_automate` URL-encodes payloads by default (UI charset); pass `url_encode: false` for body/JSON/header fuzzing where literals matter.
-
-### Replay sessions: one-shot vs iteration
-`caido_replay(request_id=...)` creates a new session per call — right for one-off replays. `caido_replay(session_id=...)` edits the session's latest entry and resends, appending a new entry to the same session's history (the UI's History drop-down + arrows). Use iteration mode to group auth-bypass/parameter attempts in one session. `replay_in_session()` in `lib/graphql/replay.py`; `_apply_mutations()` is shared with `replay_with_edit()`.
-
-### Scope-aware workflow
-Caido's GraphQL API has no concept of "the scope the history tab is filtering by" — the UI stores that client-side. The plugin bridges this gap:
-
-1. **`caido_onboard` suggests a scope** — matches recent traffic hosts against scope allowlists via glob patterns. Returns `suggested_scope` with matched hosts and reasoning, and reports `active_scope` (the scope now set).
-2. **Onboard sets the active scope** — stored in module-level state. All subsequent `search()` and `recent()` calls use it as the default filter.
-3. **The agent should ask the user** if no scope is suggested (no recent traffic, or traffic doesn't match any scope) or if multiple scopes are plausible.
-4. **Once a scope is chosen**, the agent relies on the active scope or passes `scope_id` explicitly.
-5. **To override**, the `scope_id` sentinel semantics matter: `_UNSET` (default) = active scope; explicit `None` or `""` = disable filtering (see full history); a scope id = filter by that scope. The tool schemas expose `scope_id` on `caido_search`/`caido_recent`; handlers translate omitted → `_UNSET` so the default is scope-filtered, not unfiltered.
-
-This ensures the agent is always looking at the target, not background noise like `detectportal.firefox.com`. When search comes back empty, check the active scope before concluding the traffic doesn't exist.
-
-### Proxy injection
-The Caido proxy listener is reachable from the shell (commonly `127.0.0.1:8080`). `curl -x http://127.0.0.1:8080 <url>` sends traffic through it; HTTPS requires `-k` because Caido MITMs with its own CA. Proxied traffic lands in history, so automate/replay can source it. See the skill's "Injecting traffic through the Caido proxy" section.
-
-## Working with the Codebase
-
-### Adding a new GraphQL operation
-1. Add the async function in `lib/graphql/<domain>.py`
-2. Add the sync wrapper in `lib/<domain>.py` using `sync_run()`
-3. If it's a tool handler, add it in `caido_tools.py` and register in `__init__.py`
-4. If it's skill-only, document it in the relevant `skills/<name>/SKILL.md`
-
-### Running code from skills
-Skills use `execute_code` to call library functions:
+Tool handlers are called by the framework with `(args, **kwargs)` — **`ctx` is
+not threaded through**. It is only available inside `register(ctx)`. The
+standard pattern is to stash it in a module global at registration time and
+read it in handlers:
 
 ```python
-import os, sys
-sys.path.insert(0, os.environ["CAIDO_PLUGIN_DIR"])
-from lib import http_requests
-
-results = http_requests.search(query='req.path.cont:"/api/"', limit=10)
+_ctx: Optional[PluginContext] = None
+def set_ctx(ctx): global _ctx; _ctx = ctx
+def _ctx_or_none():
+    global _ctx
+    return _ctx if _ctx else None
 ```
 
-### Checking syntax
-```bash
-python3 -m py_compile lib/graphql/client.py
-python3 -m py_compile caido_tools.py
-```
+Any new handler must go through `_ctx_or_none()` (or the module helpers) —
+never assume `ctx` is in `**kwargs`.
 
-### Running the test suite
-The regression suite covers the two failure classes that have bitten these
-plugins: the framework-loader import behavior and schema sanitization. It
-needs the Hermes framework on `PYTHONPATH` for the sanitizer import.
+**`session_id` *is* threaded through `kwargs`.** The framework passes the
+current session ID as `kwargs["session_id"]` when dispatching tool calls. Use
+it when a plugin needs to exclude the current conversation (e.g. a recall
+search) or otherwise key off which session is active.
 
-```bash
-PYTHONPATH=/path/to/hermes-agent \
-  /path/to/hermes/venv/bin/python -m pytest tests/ -q
-```
+## Handler contract
 
-Layout: `tests/test_plugin_load.py` (loader semantics, 13-tool
-registration, no-sys.path-mutation guard, sync-wrapper imports),
-`tests/test_schema_sanitizer.py` (schemas survive `sanitize_tool_schemas`
-with properties/required intact, no top-level combinators).
+Every tool handler must follow three rules (the docs' "common mistakes"):
 
-## Important Pitfalls
+1. **Return a JSON string — ALWAYS, even on error.** Never a bare dict.
+2. **Accept `**kwargs`.** The framework may pass extra context (task_id,
+   session_id, parent_agent); a handler without `**kwargs` breaks when it does.
+3. **Catch exceptions and return error JSON.** A propagating exception fails
+   the tool call; return `json.dumps({"error": str(e)})` instead.
 
-0. **Import strategy — package-relative, never `sys.path` mutation in the framework path.** `caido_tools.py` and the `lib/*` sync wrappers use package-relative imports (`from .lib.graphql...`, `from .sync import`). Do NOT revert to `sys.path.insert(0, .../lib)` + bare `from graphql...` / `from output...`: it mutates the shared process's `sys.path` and pulls generic top-level names that can collide with stdlib/third-party modules. The framework loader imports the plugin as a namespaced package (`hermes_plugins.caido`) where relative imports resolve, so no path trickery is needed. Two special cases: `auth_helper.py` runs standalone (`python3 auth_helper.py`), so it inserts the plugin *root* on sys.path and imports `lib.graphql.client` (not the generic `graphql` name); the skill `execute_code` snippets insert `CAIDO_PLUGIN_DIR` and do `from lib import ...`. The root `__init__.py` has a try/except relative→absolute fallback because pytest imports it as a bare module (the dir name `hermes-caido` has a hyphen, invalid as a package name, so it can't be `tests`' parent) — keep that fallback.
+Hook callbacks should also accept `**kwargs` — Hermes inspects callback
+signatures, so a callback with `**kwargs` receives the complete additive
+payload across versions. If a callback crashes, it's logged and skipped;
+other hooks and the agent continue.
 
-1. **`sync_run()` closes the session after each call** — `asyncio.run()` creates a fresh event loop, so the singleton session is always stale. Closing after each call is correct, not wasteful.
+## Injecting context into the conversation
 
-2. **`caido_onboard` must run in a subprocess for auth** — the Hermes agent's event loop breaks aiohttp WS handshakes. Use `auth_helper.py` for auth flows.
+There are two mechanisms, with different availability:
 
-3. **Placeholder byte offsets are UTF-8 bytes, not characters** — multi-byte content produces different offsets.
+- **`ctx.inject_message(content, role="user") -> bool` — CLI-only.** It needs
+  `ctx._cli_ref`, which is populated only in an interactive CLI session. It is
+  `None` in the gateway, in non-interactive `hermes chat -q`, and in
+  kanban-spawned worker sessions — there it returns `False`. Design around
+  this: check the return value and degrade gracefully (see the Testing section
+  for the FakeCtx trap).
+- **`pre_llm_call` context injection — session-agnostic.** A `pre_llm_call`
+  hook callback may return a dict with a `"context"` key (or a plain string);
+  Hermes appends it to the current turn's *user message* (never the system
+  prompt, preserving the prompt-cache prefix) at API call time, ephemeral and
+  unpersisted. This is the stable mechanism for memory/RAG/guardrail plugins
+  that need to feed the model context every turn, and it works in every
+  process.
 
-4. **Automate `update_session` requires `connection` dict** — even when only changing settings, you must pass the connection info. Always fetch the session first.
+For the stable session-agnostic surface, use `ctx.profile_name` (resolves the
+active profile from `HERMES_HOME`, no `_cli_ref`) and `ctx.dispatch_tool(...)`
+rather than reaching into `ctx._cli_ref.agent` or similar private state.
 
-5. **`interceptOptions.scope.scopeId` is intercept-only** — Caido doesn't expose "active scope for proxy history" via GraphQL. Scopes are per-mode in the UI (intercept/filter/history).
+## Import strategy
 
-6. **URL-encoding is on by default** — `caido_automate` percent-encodes payloads with the UI charset (spaces/reserved chars → `%XX`). Set `url_encode: false` when fuzzing bodies/JSON/headers where literal values matter. Payloads should be written to need no processing (Option A): embed quoting/termination directly in values rather than reaching for prefix/suffix preprocessors. `${IFS}` bypasses space restrictions in shell commands passed through SSRF.
+- **Prefer package-relative imports (`from .lib import ...`, `from . import
+  schemas`) over `sys.path` mutation.** The loader imports the plugin as a
+  namespaced package where relative imports resolve, so no path trickery is
+  needed in the framework path.
+- **Do NOT `sys.path.insert(0, ...)` at import time to reach vendored code.**
+  This mutates the shared process's `sys.path` (a persistent process-wide side
+  effect) and lets *generic top-level names* — `graphql`, `output`, `http`,
+  etc. — silently collide with stdlib/third-party modules loaded later. This
+  exact antipattern shipped in one plugin and now carries a no-sys.path-
+  mutation guard in its test suite.
+- **Two legitimate exceptions** (document them at the site):
+  1. A standalone entrypoint (`python3 auth_helper.py`) that inserts the
+     plugin *root* — not a nested `lib/` — and imports the qualified path
+     (`lib.graphql.client`), never the generic leaf name.
+  2. Skill `execute_code` snippets that insert `PLUGIN_DIR` and import the
+     qualified package (`from lib import http_requests`).
 
-7. **Gopher/file/dict protocols disabled on many targets** — SSRF exploitation often requires HTTP-only approaches. Check what the server's libcurl supports.
+## Routing through the framework
 
-## Environment
+Route every external command through `ctx.dispatch_tool(name, args, *,
+parent_agent=None) -> str`, not a direct `subprocess` call. The return envelope
+to parse is `{"output", "exit_code", "error"}`. This keeps approval gating,
+redaction, and interrupts on every invocation. `parent_agent` resolves from the
+active CLI agent (or degrades gracefully in gateway mode); pass it explicitly
+only when you must override.
 
-- **Plugin path:** `CAIDO_PLUGIN_DIR` env var (set automatically during registration, works under any profile)
-- **Hermes home:** `HERMES_HOME` env var if set (profile-aware), otherwise `~/.hermes/`
-- **Token cache:** `<hermes_home>/cache/caido-token.json`
-- **Caido URL/PAT:** `<hermes_home>/.env` or env vars `CAIDO_URL` / `CAIDO_PAT` (required — all instances, including local, require auth)
-- **Python executable:** `sys.executable` (same Python running the plugin)
-- **Caido schema version:** 0.57.x
+Where a plugin drives a *sub-model* rather than a shell, use native function
+calling through `call_llm(tools=[...])` from `agent.auxiliary_client.py` —
+**never regex-parse tool calls out of plain text.** Structured `tool_calls`
+from the API are the contract: the loop dispatches them, feeds results back as
+`tool` role messages, and termination is "no `tool_calls` in the response."
+Regex/fence parsers break on nested braces, assume key ordering, and turn every
+model formatting quirk into a silent stall.
 
-Skills import the library via:
-```python
-import os, sys
-sys.path.insert(0, os.environ["CAIDO_PLUGIN_DIR"])
-from lib import http_requests, management, automate, replay, findings
-```
+## Plugin config and state
 
-## Future Work
+User-visible behavior goes in plugin-relative config; runtime bookkeeping goes
+in `ctx.state`:
 
-See `TODO.md` for the open items:
-- Automate patterns (Phase 5), extractor builder
-- SDK migration when `caido-sdk-client` >= 3.12-compatible + automate support
-- Packaging via `pip install -e .` (pyproject.toml exists)
-- Known issues: session-delete-with-task, replay/automate ID namespace split, event-loop conflicts
+- **`ctx.get_config(key, default=...)` / `ctx.set_config(key, value)`** —
+  resolves under `plugins.entries.<plugin-id>.settings` in `config.yaml`.
+  Global, cross-plugin, and traversal paths are rejected.
+- **`ctx.state`** — plugin-owned runtime data (cursors, caches, dedup),
+  profile-scoped, atomically replaced, ~10 MiB per plugin, stored under
+  `<HERMES_HOME>/plugin-data/`.
+
+Neither API exposes another plugin's namespace. Settings live in `config.yaml`;
+state lives under the profile home — keep the two concerns separate.
+
+## Two-layer design (async core + sync wrappers)
+
+Plugins doing network I/O (GraphQL, HTTP, WebSocket) can benefit from the
+two-layer pattern:
+
+1. `lib/graphql/<domain>.py` — async functions using raw protocol + aiohttp.
+2. `lib/<domain>.py` — sync wrappers via `sync_run()` for skill consumption.
+
+Tool handlers call the async layer directly; skill `execute_code` blocks call
+the sync wrappers. The sync wrapper must `close()` the session after each call
+— `asyncio.run()` creates a fresh event loop, so a singleton session is always
+stale.
+
+**Auth isolation.** If the plugin authenticates against a server (OAuth2,
+device flow), the agent's async context can interfere with connection
+handshakes (inherited SSL state, nested event loops). Run the auth flow in a
+standalone subprocess (`auth_helper.py`), never in the agent's event loop.
+
+## Gating tools on availability
+
+Use `check_fn` to hide tools when their dependency isn't present, rather than
+erroring at runtime. Gate on the *real condition*:
+
+- `shutil.which(binary) is not None` for a CLI dependency
+- DB/file existence for a state dependency (respect the active profile via
+  `get_hermes_home()` / `HERMES_HOME`)
+
+Don't gate on ambient session state (e.g. "inside tmux") — the agent should be
+able to drive a tool from outside the context it normally runs in. And
+`manifest.provides_tools` must agree with `check_fn`: hide tools from the list
+when they can't work, don't leave a stub that errors at call time.
+
+## Profile-aware paths
+
+Resolve Hermes's data dir via `HERMES_HOME` (if set) falling back to
+`~/.hermes/` — never hardcode a path. This is what makes the plugin work under
+any profile (`rbw`, `ares`, `default`). Use the helper from
+`hermes_constants.py` rather than re-deriving it.
+
+## Progressive tool disclosure: register, don't hide in skills
+
+Hermes uses progressive tool disclosure — non-core tools sit behind
+`tool_search` / `tool_describe` / `tool_call` and schemas load on demand. The
+old context-cost argument for burying operations inside a skill is gone.
+**Register every operation an agent performs as a tool** and put the decisions
+in the schema descriptions. A skill is warranted only for a *judgment layer*
+that doesn't fit a schema — shared-workspace conventions, when to use which
+tool, pitfalls, recipes — not as a hiding place for callable operations.
+
+## Schemas: keep the framework sanitizer in mind
+
+The framework sanitizes tool schemas. Known sharp edges:
+- **A top-level `oneOf` / `anyOf` combinator can be stripped.** Flatten the
+  schema so the sanitizer can't discard the intended shape. Add a dedicated
+  test that runs `sanitize_tool_schemas` over every schema and asserts
+  `properties`/`required` survive with no top-level combinators.
+- Descriptions are the documentation the model reads at call time. Bake the
+  tricky behavior (flag defaults, failure modes, follow-up expectations) into
+  the schema text rather than a separate skill.
+
+## Security principles for plugin tools
+
+- **Lifecycle stays in human hands.** Don't ship a teardown tool that lets the
+  agent destroy its own observability mid-session. If teardown is needed, the
+  agent can do it via `terminal` — don't pin it as a tool.
+- **Guard against injection.** Validate free-form input before it reaches the
+  underlying CLI. A leading `-` on a value that should be a bare token can be
+  interpreted as a flag (tmux key names, shell args). Reject it with a message
+  that names the correct form.
+- **Protect the agent's own input.** If the tool targets a pane/stream the
+  agent itself drives, refuse to send into the agent's own one — a stale or
+  resolved-by-name target could land keystrokes in the agent's own input.
+- **No automatic capture hooks.** Don't add `pre_tool_call`/`post_tool_call`
+  hooks that observe every terminal call unless the user explicitly asks. The
+  model should opt in by calling the tool, not have observability forced on it.
+- **Make destructive operations opt-in.** If a tool modifies state the user is
+  watching, bias the default toward the non-destructive path and expose the
+  destructive one explicitly.
+
+## Testing plugins
+
+- **Prefer a real pytest suite against the actual dependency** (a live server,
+  a real tmux session on an isolated socket) over mocks of the CLI. Mocks
+  verify the happy path; they silently pass when the *contract* with the
+  framework changes.
+- **`FakeCtx` must model the real framework's return *envelope* exactly, and
+  must not unconditionally succeed where the real framework can fail.** If a
+  method returns `False` in some real mode (e.g. `inject_message` in the
+  TUI/gateway), add a test that exercises that failure path — otherwise the
+  suite masks it. This is the single most common blind spot: a FakeCtx that
+  always returns `True` passes while the real path is broken.
+- **Test the framework contract, not just the happy path.** Include a loader
+  test (registrations, no sys.path mutation, sync-wrapper imports) and a schema
+  sanitizer test (no top-level combinators, `properties`/`required` intact).
+  These are the two failure classes that have bitten real plugins.
+- Stand up an isolated server per test module on a dedicated socket so tests
+  never touch a real session, and tear it down in a fixture `finally`.
+- If a handler runs a sub-model loop, unit-test the loop's *control flow* with
+  a mocked `call_llm` (tool-then-answer, immediate answer, max-iterations
+  synthesis, unknown-tool rejection, malformed args, multiple calls per turn),
+  and have a separate integration harness for the real end-to-end path.
+- **Validate loading before writing tests**: `hermes plugins doctor . --ci`
+  runs the same discovery, manifest parse, namespaced import, `register()`,
+  hook registry, and tool registry Hermes uses, and exits non-zero on error
+  (reports invalid hook names, callbacks without `**kwargs`, and drift between
+  declared and registered tools/hooks). For a plugin that isn't appearing at
+  all, set `HERMES_PLUGINS_DEBUG=1` for verbose discovery logs, or tail
+  `~/.hermes/logs/agent.log`.
+
+## General coding best practices
+
+- **Compose, don't construct.** Small functions that do one thing well,
+  connected cleanly. Every handler should be understandable on its own.
+- **Read before you write.** Understand the full context — the file, its
+  callers, its tests, the commit that introduced it — before changing anything.
+  Trace a symbol to its definition and usages rather than guessing its shape.
+- **Make the smallest change that solves the problem.** Don't refactor what you
+  don't need, don't add what isn't asked for, don't decorate.
+- **Test before you assume.** If you're not certain how something behaves, write
+  a test and find out. Assumptions are expensive; verification is cheap.
+- **Think in systems.** A change ripples to callers, tests, deployments, and the
+  next reader. Follow the thread before you pull it.
+- **Respect the machine.** Understand what the code actually does at the level
+  it runs. Profile before optimizing; measure before claiming.
+- **Fix root causes, not symptoms.** When you find a bug, check sibling call
+  paths for the same flaw and fix the class, not just the reported site.
+- **Be honest about what you don't know.** Say "I don't know" rather than guess
+  confidently. A wrong answer wastes more time than an honest gap.
+
+## Distinction this file depends on
+
+**AGENTS.md dictates behavior; DESIGN.md records the project's rationale.**
+If a rule gates what the agent must or must not do, it belongs in this file (or
+in the tool schemas). If it explains *why* a decision was made — a measured
+behavior against a live system, a reverted alternative, a historical bug — it
+belongs in `DESIGN.md`. Rationale in AGENTS.md makes every rationale edit an
+edit to a protected instruction file; keeping the two separate is the point.
