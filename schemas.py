@@ -41,7 +41,9 @@ CAIDO_SEARCH = {
         "Search is scoped by default: caido_onboard sets the active scope, so "
         "results are limited to that scope's hosts. Pass scope_id=\"\" to see "
         "the full history (outside the scope) or scope_id=<id> to filter by a "
-        "different scope."
+        "different scope. An empty result usually means the traffic is outside "
+        "the active scope — retry with scope_id=\"\" before concluding the "
+        "request isn't in history."
     ),
     "parameters": {
         "type": "object",
@@ -295,7 +297,9 @@ CAIDO_REPLAY = {
         "to edit-and-resend in an existing session, appending a new entry to "
         "that session's history (visible in the Replay tab history drop-down) — "
         "use for iterating on the same request (auth bypasses, parameter "
-        "tweaks) so all attempts stay grouped. Accepts both the "
+        "tweaks) so all attempts stay grouped. Edits pass through verbatim — "
+        "pre-encode special characters yourself (space → %20, quote → %27); "
+        "automate percent-encodes by default, replay does not. Accepts both the "
         "caido_search/caido_recent request id and the number shown in the Caido "
         "UI history table. Use when the traffic should be visible in Caido "
         "(shared workspace). For quick private probes the user doesn't need to "

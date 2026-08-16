@@ -13,7 +13,6 @@
 - [ ] **Extractor builder + `testExtractor`** (schema has `AutomateExtractorRegex` + `testExtractor`) — natural companion to Phase 4 result retrieval: extract result bodies as columns instead of raw payload→status pairs. Only when a campaign needs structured extraction.
 - [ ] **Automate session delete fails while a task exists** — session with running/completed task returns "Failed to delete automate session / User error". Workaround documented in skill pitfall 9 (cancel first, then delete). Consider auto-cancel in `delete_session`.
 - [ ] **Replay/automate session ID namespace ambiguity** — both domains return small numeric ids (`sessionId: 4` / `taskId: 3`) from separate counters. An agent holding a replay id and passing it to automate (or vice versa) hits not-found/wrong-object. Options: prefix tool output (`replay:4` / `automate:4`) or document the split in schema descriptions.
-- [ ] **Event loop conflicts in `caido_onboard` / `caido_health`** — auth helper subprocess workaround works, but health/graphql calls still run inside the agent's event loop. Only matters if a session reports flaky first-call behavior.
 - [ ] **Packaging** — `pip install -e .` for distribution (pyproject.toml exists, v0.7.0). Deferred: directory-plugin + symlink install works; packaging is for other profiles/hosts.
 - [x] **Skills import via `from lib import ...`** — the old pattern (`sys.path.insert(0, .../lib)` + `import automate`) mutated sys.path and pulled generic top-level names. Skills now insert the plugin root (`sys.path.insert(0, os.environ["CAIDO_PLUGIN_DIR"])`) and import the `lib` package (`from lib import automate, placeholders, payloads`). Done 2026-08-14; examples updated in AGENTS.md, `skills/caido/references/automate-lib.md`, and `management.md`.
 
@@ -23,6 +22,7 @@
 - [ ] **WebSocket replay** (v0.57.0) — `ReplayEntryWs` types in schema; no WS-session functions in `lib/graphql/replay.py`. Only if an agent-operator use case appears (low priority).
 - [ ] **StreamQL** — WS-history filtering; defer with WS replay.
 - [ ] **SDK migration** — blocked: SDK requires Python ≥3.12 (Hermes venv is 3.11.15) AND generated schema has zero `AutomateSession` references. Keep raw aiohttp GraphQL. Re-check when (a) Hermes bumps venv or SDK supports 3.11, AND (b) SDK gains AutomateSession. Partial-migration seam if ever wanted: SDK for replay/findings/scopes, keep `lib/graphql/automate.py` raw.
+- [ ] **Event loop conflicts in onboard/health** — resolved-by-design: auth WebSocket runs subprocess-isolated (`_setup_via_subprocess`); regular GraphQL is loop-safe (`_current_loop` tracking + `_is_session_stale` close/recreate + one-shot retry; `sync_run` closes after each call; `close()` resets `_current_loop`). No connection issues observed since the auth rewrite. Only re-open if a session reports flaky first-call behavior.
 
 ## Recently Completed (don't redo)
 
@@ -35,12 +35,14 @@
 - **Proxy injection documented** — Caido proxy reachable at 127.0.0.1:8080; curl -x / -sk lands traffic in history (the "no proxy listener" finding from an earlier session was wrong — missing -k for Caido's MITM CA).
 - **Management CRUD fixed + verified** — scope/project/filter/env CRUD in `lib/management.py` was broken against live schema (error unions read `message` instead of `code`; GET_SCOPE asked for allow/deny not allowlist/denylist). All fixed, live round-trips pass.
 - **Skill rename to `caido:caido`** — general agent-operator cookbook, general-first ordering, all 13 tools named, frontmatter trigger self-contained.
+- **Onboard `next_step` key** — `handle_onboard` returns a top-level imperative `next_step` telling the model to `skill_view("caido:caido")` before Caido work; the redundant sentence was removed from `workspace.note` so the instruction lives in one place. Done after auditing skill-vs-description split (most mechanics already baked in).
+- **Skill-only guardrails baked into descriptions** — `caido_replay` now warns edits pass through verbatim (pre-encode `%20`/`%27`, unlike automate); `caido_search` notes an empty result usually means traffic is outside the active scope (retry `scope_id=""`). The two genuine error surfaces that were skill-only are now in always-read tool descriptions.
+- **Schema sanitizer test harness fixed** — `_schemas()` never called `load_plugin()`, so the `hermes_plugins_test` namespace wasn't created and all 4 sanitizer tests failed on import (`ModuleNotFoundError`). One-line fix; 8/8 tests pass.
 
 ## Known Issues (still open, above)
 
 - Automate session delete while task exists
 - Replay/automate session ID namespace ambiguity
-- Event loop conflicts in onboard/health
 - SDK migration blockers (Python 3.12 + missing AutomateSession)
 
 ## Verified Fixed (don't re-open)

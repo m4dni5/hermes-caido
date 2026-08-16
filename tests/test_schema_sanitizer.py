@@ -21,6 +21,7 @@ ALLOWED_EMPTY = {"caido_onboard", "caido_health"}  # take no arguments
 def _schemas():
     import importlib
 
+    load_plugin()  # set up the hermes_plugins_test namespace before importing
     modname = f"{_NS_PARENT}.caido"
     importlib.import_module(f"{modname}.schemas")
     schemas_mod = sys.modules[f"{modname}.schemas"]

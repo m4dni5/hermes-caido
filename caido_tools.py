@@ -587,6 +587,11 @@ async def handle_onboard(args: dict, **kwargs) -> str:
         return json.dumps({
             "health": {"status": "ok"},
             "auth": {"authenticated": True},
+            "next_step": (
+                "Call skill_view(\"caido:caido\") to load the cookbook — tool map, "
+                "replay/automate decisions, payload encoding, pitfalls — before any "
+                "Caido work."
+            ),
             "project": {
                 "name": project.get("name"),
                 "id": project.get("id"),
@@ -615,8 +620,6 @@ async def handle_onboard(args: dict, **kwargs) -> str:
                     "When you're exploring independently and the user doesn't need "
                     "to watch, use terminal tools (curl/ffuf) instead — they're "
                     "faster and don't clutter the shared history. "
-                    "For the full decision framework — tool map, replay vs automate, "
-                    "payload encoding, pitfalls — load the caido:caido skill."
                 ),
             },
         }, indent=2)
