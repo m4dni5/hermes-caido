@@ -137,6 +137,16 @@ Cancel the task before deleting a session.
 - **Auth bypass** — automate header values (X-Forwarded-For, X-Original-URL)
   or role claims; iterate in one replay session.
 - **Rate limiting** — SEQUENTIAL over the same request; watch for 429s.
+- **Recon the real API surface** — for a JS-heavy SPA, curl/scripts miss the
+  client-side API calls (or get bot-walled 403). Drive a real browser through
+  the Caido proxy (browser_exec/CDP) through real user flows (login, search,
+  cart, checkout) so the app's XHR/API calls land in history. Mine with HTTPQL
+  (`req.host.cont:"target"`, `req.path.cont:"/api"`), inspect with
+  `caido_get`, filter telemetry/static noise with negations
+  (`req.path.ncont:"/assets"`), then replay/automate what's interesting. A
+  real browser also passes WAF JS-challenges curl can't — but the bot session
+  may still gate the API layer; test a `fetch()` in the page context before
+  assuming the surface is reachable.
 
 ## HTTPQL
 
@@ -152,6 +162,8 @@ facts:
 - `cont` is case-insensitive, `eq`/`ne` case-sensitive; `ext` needs a
   leading dot; regex is Rust-flavored
 - `AND` binds tighter than `OR` — parenthesize
+- When a query won't validate, pull broad (`caido_recent` or a loose
+  `caido_search`) and filter the results locally by host/path/method
 
 Verified patterns:
 
