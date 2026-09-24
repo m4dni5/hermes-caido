@@ -38,6 +38,8 @@ namespace.field.operator:value
 |---|---|---|
 | `created_at` | Date/time request was sent | Date/Time (RFC3339 / ISO8601 / RFC2822 / RFC7231 / ISO9075) |
 | `ext` | Extension of the requested file | String/Byte — `eq`/`ne` need leading `.`: `req.ext.eq:".js"` |
+| `body` | Request body only (no headers/line) | String/Byte |
+| `header` | Request headers — three forms (see below) | String/Byte |
 | `host` | Value of the request's `Host` header | String/Byte |
 | `len` | Request size in bytes (line + headers + body) | Integer |
 | `method` | HTTP method | String/Byte |
@@ -51,10 +53,32 @@ namespace.field.operator:value
 
 | Field | Description | Value Type |
 |---|---|---|
+| `body` | Response body only (no headers) | String/Byte |
 | `code` | Response status code | Integer |
+| `header` | Response headers — three forms (see below) | String/Byte |
 | `len` | Response size in bytes | Integer |
 | `raw` | Full raw response | String/Byte |
 | `roundtrip` | Total request/response cycle time (ms) | Integer |
+
+### The `header` field (req and resp)
+
+Three addressing forms, all taking the standard String/Byte operators:
+
+```
+req.header.name.eq:"Authorization"          # match header NAME
+req.header.value.cont:"Bearer"              # search across all header VALUES
+req.header["Authorization"].cont:"Bearer"   # address ONE header by name
+resp.header["Set-Cookie"].cont:"HttpOnly"
+```
+
+### The `body` field (req and resp)
+
+Body only — no request/response line, no headers:
+
+```
+req.body.regex:"password=[^&]+"
+resp.body.cont:"stack trace"
+```
 
 ### row
 
@@ -82,11 +106,12 @@ namespace.field.operator:value
 ## Usage notes
 
 - **Negation** — use `ncont` / `nlike` / `ne` / `nregex` (there is no `NOT`).
-- **Bodies and headers** — search through `req.raw.cont` / `resp.raw.cont`
-  with the literal substring (`resp.raw.cont:"error"` finds stack traces,
-  `resp.raw.cont:"Set-Cookie:"` finds cookie-setting responses). There are
-  no `req.body` / `resp.body` / `req.header.value` / `resp.header.value`
-  fields.
+- **Bodies and headers** — prefer the targeted fields over `raw`:
+  `resp.body.cont:"error"` (body only), `req.header["Authorization"].cont:"Bearer"`
+  (one header), `req.header.value.cont:"token"` (all header values).
+  `req.raw.cont` / `resp.raw.cont` still work and match the whole message —
+  use them when the section doesn't matter or you want line+headers+body in
+  one sweep.
 - **Status code** — the field is `resp.code` (`resp.code.gte:400`).
 - **Case sensitivity** — `cont`/`ncont` are case-insensitive; `eq`/`ne`
   are case-sensitive.
@@ -120,9 +145,10 @@ Write the expansion explicitly in `caido_search` queries.
 - Slow responses: `resp.roundtrip.gt:5000`
 - Large responses: `resp.len.gt:100000`
 - JSON API traffic: `req.method.eq:"POST" AND req.raw.cont:"application/json"`
-- Auth headers: `req.raw.cont:"Authorization"` (case-insensitive `cont`
-  matches the header name)
-- Tokens: `resp.raw.cont:"eyJ"` (JWT prefix), `resp.raw.cont:"AKIA"` (AWS key)
+- Auth headers: `req.header.name.eq:"Authorization"` or `req.raw.cont:"Authorization"`
+- Cookies in responses: `resp.header["Set-Cookie"].cont:"HttpOnly"`
+- Tokens in bodies: `resp.body.cont:"eyJ"` (JWT prefix), `resp.body.regex:"AKIA[A-Z0-9]{16}"`
+- Tokens in headers: `req.header.value.cont:"eyJ"`
 - Stack traces: `resp.raw.cont:"Traceback" OR resp.raw.cont:"Exception"`
 - Missing security header: `resp.raw.ncont:"Content-Security-Policy:"`
 - Admin paths: `req.path.cont:"/admin" OR req.path.cont:"/wp-admin"`
@@ -134,5 +160,6 @@ Write the expansion explicitly in `caido_search` queries.
 
 ## Verified
 
-Fields, operators, and patterns verified live against a Caido 0.57.x
-instance via `caido_search` (2026-08).
+Fields, operators, and patterns verified live against a Caido 0.58.x
+instance via read-only `requests` queries (2026-09), including the
+`header`/`body` fields added in v0.58.0.
