@@ -120,6 +120,10 @@ async def handle_search(args: dict, **kwargs) -> str:
     try:
         from .lib.graphql.context import ensure_context
         from .lib.graphql.http_requests import _UNSET
+        # Envelope BEFORE the operation: it sets the active scope, so the
+        # first search of a session is already scoped. It returns non-None
+        # only on the call that produced it.
+        context_block = await ensure_context()
         scope_id = args.get("scope_id")
         if scope_id is None:
             scope_id = _UNSET  # omitted → active scope
@@ -130,7 +134,6 @@ async def handle_search(args: dict, **kwargs) -> str:
             order=args.get("order"),
             scope_id=scope_id,
         )
-        context_block = await ensure_context()
         if context_block and "error" not in data:
             data["context"] = context_block
         return _format(data, args)
@@ -142,11 +145,11 @@ async def handle_recent(args: dict, **kwargs) -> str:
     try:
         from .lib.graphql.context import ensure_context
         from .lib.graphql.http_requests import _UNSET
+        context_block = await ensure_context()
         scope_id = args.get("scope_id")
         if scope_id is None:
             scope_id = _UNSET  # omitted → active scope
         data = await recent(limit=args.get("limit", 20), scope_id=scope_id)
-        context_block = await ensure_context()
         if context_block and "error" not in data:
             data["context"] = context_block
         return _format(data, args)
@@ -157,8 +160,8 @@ async def handle_recent(args: dict, **kwargs) -> str:
 async def handle_get(args: dict, **kwargs) -> str:
     try:
         from .lib.graphql.context import ensure_context
-        data = await get(request_id=args["request_id"])
         context_block = await ensure_context()
+        data = await get(request_id=args["request_id"])
         if context_block and "error" not in data:
             data["context"] = context_block
         return _format(data, args)
