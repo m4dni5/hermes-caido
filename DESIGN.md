@@ -60,15 +60,16 @@ tool schema.
 capability: most of what Caido does an agent can do faster in the terminal.
 Traffic replayed, automate runs, and findings created through the plugin appear
 in the Caido UI the user is watching — that's the shared surface. Tool
-descriptions, `caido_onboard` output, and the skill all carry the same guidance:
+descriptions and the skill carry the same guidance:
 **use Caido when the user should see or build on the work; use curl/ffuf for
 private exploration**. The plugin never claims to be the best automate engine —
 it's the best *visible* one.
 
 **Auth runs in a subprocess.** The Hermes agent's async context interferes with
 aiohttp WebSocket connections (inherited SSL state, nested event loops). The
-auth flow runs in `auth_helper.py` as a fresh process. `caido_onboard` handles
-the happy path; `caido_auth_setup` handles setup/troubleshooting as a tool.
+auth flow runs in `auth_helper.py` as a fresh process. `caido_auth_setup`
+handles setup/troubleshooting as a tool; normal GraphQL paths self-heal via
+the cached token.
 
 **All instances require authentication.** Every Caido instance requires an
 access token — including local ones at `127.0.0.1:8080`. The client tries, in
@@ -114,17 +115,26 @@ with `replay_with_edit()`.
 
 **Scope-aware workflow.** Caido's GraphQL API has no concept of "the scope the
 history tab is filtering by" — the UI stores that client-side. The plugin
-bridges this gap:
-1. `caido_onboard` suggests a scope — matches recent traffic hosts against scope
-   allowlists via glob patterns. Returns `suggested_scope` with matched hosts and
-   reasoning, and reports `active_scope` (the scope now set).
-2. Onboard sets the active scope — stored in module-level state. All subsequent
-   `search()`/`recent()` calls use it as the default filter.
-3. The agent should ask the user if no scope is suggested (no recent traffic, or
-   traffic doesn't match any scope) or if multiple scopes are plausible.
-4. Once a scope is chosen, the agent relies on the active scope or passes
+bridges this gap (v0.7.1: no onboard tool — orientation is implicit):
+1. **One-shot context envelope** (`lib/graphql/context.py`): the first
+   successful read call (search/recent/get) runs a lightweight
+   project+scopes query alongside the requested operation, matches recent
+   traffic hosts against scope allowlists (glob patterns), and attaches a
+   one-time `context` block to that response — project, scopes,
+   `suggested_scope` with matched hosts, `active_scope` (the scope now set),
+   recent hosts. Ambiguous matches (tie between scopes) select nothing.
+2. The envelope sets module-level active scope state; all subsequent
+   `search()`/`recent()` calls use it as the default filter. Subsequent
+   calls skip the envelope entirely — zero added latency after the first.
+3. When no scope is suggested (no recent traffic, or traffic doesn't match
+   any allowlist), no scope is set — the context block says so, and the
+   agent can pass `scope_id=""` (full history) or ask the user.
+4. The envelope never raises: auth errors mark it done for the session
+   (the operation's own error surfaces the auth problem); other errors
+   retry up to three times.
+5. Once a scope is chosen, the agent relies on the active scope or passes
    `scope_id` explicitly.
-5. To override, the `scope_id` sentinel semantics matter: `_UNSET` (default) =
+6. To override, the `scope_id` sentinel semantics matter: `_UNSET` (default) =
    active scope; explicit `None` or `""` = disable filtering (see full history);
    a scope id = filter by that scope.
 
@@ -157,7 +167,7 @@ traffic lands in history, so automate/replay can source it.
 - **`sync_run()` closes the session after each call** — `asyncio.run()` creates
   a fresh event loop, so the singleton session is always stale. Closing after
   each call is correct, not wasteful.
-- **`caido_onboard` must run in a subprocess for auth** — the Hermes agent's
+- **Auth must run in a subprocess** — the Hermes agent's
   event loop breaks aiohttp WS handshakes. Use `auth_helper.py` for auth flows.
 - **Placeholder byte offsets are UTF-8 bytes, not characters** — multi-byte
   content produces different offsets.

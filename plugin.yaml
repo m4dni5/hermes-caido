@@ -1,9 +1,10 @@
 name: caido
-version: 0.7.0
-description: Caido HTTP proxy integration — onboard, search, replay, automate campaigns, findings, export curl, auth setup.
+version: 0.7.1
+description: Caido HTTP proxy integration — search, replay, automate campaigns, findings, export curl, auth setup.
+
+Session orientation is automatic: the first read call returns project/scope context.
 author: matt
 provides_tools:
-  - caido_onboard
   - caido_health
   - caido_search
   - caido_recent

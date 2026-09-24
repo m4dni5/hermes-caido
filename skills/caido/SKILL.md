@@ -35,20 +35,21 @@ Use this to seed history with a target the user hasn't browsed yet.
 
 ## Scoping
 
-`caido_search`/`caido_recent` filter to the active scope set by
-`caido_onboard`:
+`caido_search`/`caido_recent` filter to the active scope, auto-selected on
+your first Caido call from recent traffic (reported in the response's
+one-time `context` block):
 
 - Omit `scope_id` → active scope (default)
 - `scope_id=""` → full history
 - `scope_id=<id>` → that scope
 
 When a search returns empty, re-check the active scope — the traffic is
-probably there outside it. `caido_onboard` reports `active_scope`.
+probably there outside it. The `context` block reports `active_scope`.
 
 ## Tool Map
 
-Start with `caido_onboard` (health, auth, project, scopes, recent hosts,
-workspace note), then:
+Orientation is automatic: your first Caido read call returns a one-time
+`context` block (project, scopes, active scope, recent hosts). Then:
 
 | Need | Tool |
 |---|---|
@@ -74,7 +75,9 @@ GraphQL request id.
 Tools only read scopes/projects/filters. When the user asks to create,
 rename, update, or delete one, **do it via `lib/management.py`**:
 `skill_view("caido:caido", "references/management.md")`.
-After changing a scope the user wants active, re-run `caido_onboard`.
+After changing a scope the user wants active, call
+`set_active_scope(scope_id)` from `lib/http_requests.py` (or pass
+`scope_id=<id>` explicitly on subsequent searches).
 
 ## Replay
 
@@ -156,8 +159,9 @@ facts:
 - Syntax `namespace.field.operator:value` — strings quoted, ints/booleans
   unquoted: `req.path.cont:"/admin"`
 - Negate with `ncont` / `nlike` / `ne` / `nregex`
-- Bodies/headers: search `req.raw.cont` / `resp.raw.cont` with the literal
-  substring
+- Bodies/headers: targeted fields beat `raw` — `resp.body.cont:"error"`,
+  `req.header["Authorization"].cont:"Bearer"`, `req.header.value.cont:"token"`;
+  `req.raw.cont`/`resp.raw.cont` match the whole message
 - Status field: `resp.code`; always write the operator (`req.method.eq:"GET"`)
 - `cont` is case-insensitive, `eq`/`ne` case-sensitive; `ext` needs a
   leading dot; regex is Rust-flavored
@@ -168,7 +172,7 @@ facts:
 Verified patterns:
 
 - Errors: `resp.code.gte:400 AND resp.code.lt:600`
-- Tokens: `resp.raw.cont:"eyJ"`, `resp.raw.cont:"AKIA"`
+- Tokens: `resp.body.cont:"eyJ"`, `resp.body.regex:"AKIA[A-Z0-9]{16}"`
 - Missing header: `resp.raw.ncont:"Content-Security-Policy:"`
 - Admin paths: `req.path.cont:"/admin" OR req.path.cont:"/wp-admin"`
 - Open redirect: `req.query.cont:"redirect=" OR req.query.cont:"next="`

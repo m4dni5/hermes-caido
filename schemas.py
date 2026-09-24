@@ -3,8 +3,8 @@
 Each schema is a JSON Schema object that tells the LLM when and how to call
 the corresponding tool.  All tools return JSON strings.
 
-Registered tools (13):
-  caido_onboard, caido_search, caido_recent, caido_get,
+Registered tools (12):
+  caido_search, caido_recent, caido_get,
   caido_findings, caido_create_finding, caido_delete_finding,
   caido_health, caido_auth_setup, caido_export_curl, caido_replay,
   caido_automate, caido_automate_status
@@ -13,22 +13,6 @@ The caido:caido skill is the agent-operator cookbook — shared-workspace
 guidance, tool map, replay/automate decisions, pitfalls, HTTPQL reference.
 Tool descriptions carry the mechanics; the skill carries the decisions.
 """
-
-CAIDO_ONBOARD = {
-    "name": "caido_onboard",
-    "description": (
-        "Connect to Caido and gather full context in one call. Returns health, "
-        "auth status, active project, scopes, intercept config, recent traffic "
-        "summary, findings count, and available hosted files. Use this at the "
-        "start of any Caido session to orient yourself. "
-        "If auth fails, run caido_auth_setup."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": [],
-    },
-}
 
 CAIDO_SEARCH = {
     "name": "caido_search",
@@ -82,7 +66,7 @@ CAIDO_SEARCH = {
             },
             "scope_id": {
                 "type": "string",
-                "description": "Scope to filter by. Omit to use the active scope (set by caido_onboard). Pass empty string \"\" to disable scoping and search the full history. Pass a scope id to override.",
+                "description": "Scope to filter by. Omit to use the active scope (auto-selected on your first Caido call from recent traffic). Pass empty string \"\" to disable scoping and search the full history. Pass a scope id to override.",
             },
         },
         "required": ["query"],
@@ -121,7 +105,7 @@ CAIDO_RECENT = {
             },
             "scope_id": {
                 "type": "string",
-                "description": "Scope to filter by. Omit to use the active scope (set by caido_onboard). Pass empty string \"\" to disable scoping and see the full recent history. Pass a scope id to override.",
+                "description": "Scope to filter by. Omit to use the active scope (auto-selected on your first Caido call from recent traffic). Pass empty string \"\" to disable scoping and see the full recent history. Pass a scope id to override.",
             },
         },
         "required": [],
@@ -261,8 +245,9 @@ CAIDO_AUTH_SETUP = {
     "name": "caido_auth_setup",
     "description": (
         "Run the Caido OAuth2 device-code auth flow in an isolated subprocess. "
-        "Configures credentials and caches the access token. Use when "
-        "caido_onboard or caido_health reports an auth error, or after a token "
+        "Configures credentials and caches the access token. Use when any "
+        "Caido tool reports an auth error (invalid token / 401), when "
+        "caido_health fails, or after a token "
         "expiry. Requires a PAT (CAIDO_PAT) and instance URL (CAIDO_URL) — "
         "pass them explicitly or ensure they are set in the environment."
     ),

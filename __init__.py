@@ -1,8 +1,11 @@
 """Hermes Agent Caido plugin — registration.
 
 Registers tools for interacting with the Caido HTTP proxy:
-onboard, search, recent, get, findings, create_finding, delete_finding,
+search, recent, get, findings, create_finding, delete_finding,
 health, auth_setup, export_curl, replay, automate, automate_status.
+There is no onboard tool: the first read call returns a one-shot session
+context block (lib/graphql/context.py) — project, scopes, auto-selected
+active scope — so the agent can "grab and go" safely.
 
 Design (tool-search era): every operation an agent-operator performs is a
 registered tool. Tool descriptions carry the decisions; one recipe skill
@@ -51,8 +54,7 @@ def register(ctx) -> None:  # noqa: ANN001 — plugin context type
     os.environ["CAIDO_PLUGIN_DIR"] = plugin_path
 
     _tools = [
-        # Orientation & health
-        ("caido_onboard",        schemas.CAIDO_ONBOARD,        tools.handle_onboard,        "Connect and gather full Caido context"),
+        # Orientation is implicit: first read call carries the context block.
         ("caido_health",         schemas.CAIDO_HEALTH,         tools.handle_health,         "Check Caido health"),
         # Proxy history
         ("caido_search",         schemas.CAIDO_SEARCH,         tools.handle_search,         "Search proxy history with HTTPQL"),

@@ -38,11 +38,11 @@ class FakeCtx:
         return M()
 
 
-def test_plugin_registers_13_tools(plugin) -> None:
-    """register() wires all 13 tools."""
+def test_plugin_registers_12_tools(plugin) -> None:
+    """register() wires all 12 tools."""
     ctx = FakeCtx()
     plugin.register(ctx)
-    assert len(ctx.tools) == 13, f"expected 13 tools, got {len(ctx.tools)}"
+    assert len(ctx.tools) == 12, f"expected 12 tools, got {len(ctx.tools)}"
 
 
 def test_manifest_tools_covered_by_registration(plugin) -> None:

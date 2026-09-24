@@ -28,7 +28,8 @@ from .client import graphql  # noqa: E402
 # Sentinel for distinguishing "not passed" from "explicitly None"
 _UNSET = object()
 
-# Module-level active scope — set by onboard, used by search/recent as default
+# Module-level active scope — auto-selected by the context envelope
+# (lib/graphql/context.py) on the first read call, used by search/recent
 _active_scope_id: str | None = None
 
 
@@ -375,7 +376,7 @@ async def search(
 
         # Scope filtering — prefer explicit, fall back to active scope
         if scope_id is _UNSET:
-            scope_id = _active_scope_id  # Use active scope if set by onboard
+            scope_id = _active_scope_id  # Use active scope if auto-selected
         if scope_id:
             variables["scopeId"] = scope_id
 

@@ -2,7 +2,8 @@
 
 ## When to use this
 
-The tools only *read* management state: `caido_onboard` lists scopes,
+The tools only *read* management state: `caido_findings` lists findings,
+search/recent report scopes via the one-time context block.
 `caido_search`/`caido_recent` filter by `scope_id`. There is **no tool** for
 creating, renaming, updating, or deleting scopes, projects, filters,
 environments, or hosted files. When the user asks for any of those — **do it
@@ -39,9 +40,10 @@ management.delete_scope("1")
 - `update_scope` fetches the current scope first and merges partial
   updates — change just the name or just the allowlist without losing the
   other fields.
-- After creating/editing a scope the user wants active, re-run
-  `caido_onboard` (or call `set_active_scope` from `lib/http_requests.py`)
-  so `caido_search`/`caido_recent` pick up the change.
+- After creating/editing a scope the user wants active, call
+  `set_active_scope(scope_id)` from `lib/http_requests.py` (or pass
+  `scope_id=<id>` explicitly) so `caido_search`/`caido_recent` pick up
+  the change.
 
 ### Projects
 

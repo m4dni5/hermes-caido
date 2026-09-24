@@ -1,4 +1,9 @@
-"""Async tool handlers for Hermes Agent Caido plugin."""
+"""Async tool handlers for Hermes Agent Caido plugin.
+
+Session orientation: no onboard tool — the first successful read call
+(search/recent/get) attaches a one-time ``context`` block (project, scopes,
+auto-selected active scope) via lib.graphql.context.ensure_context.
+"""
 
 import json
 from pathlib import Path
@@ -20,10 +25,9 @@ from .lib.graphql.management import (
     filters, create_filter, delete_filter,
     environments, create_environment, delete_environment,
     projects, create_project, delete_project,
-    hosted_files, tasks, cancel_task,
 )
 from .lib.graphql.auth import setup as _auth_setup
-from .lib.graphql.client import health, graphql
+from .lib.graphql.client import health
 from .lib.output import format_entry_compact, format_response
 
 import asyncio
@@ -483,164 +487,4 @@ async def handle_automate_status(args: dict, **kwargs) -> str:
         return json.dumps({"error": str(e)}, indent=2)
 
 
-# ---------------------------------------------------------------------------
-# Onboard handler — full context in one call
-# ---------------------------------------------------------------------------
 
-_ONBOARD_QUERY = """\
-query Onboard {
-    currentProject {
-        readOnly
-        project { id name status temporary createdAt updatedAt size }
-    }
-    interceptOptions {
-        request { enabled }
-        response { enabled }
-        scope { scopeId }
-    }
-    scopes { id name allowlist denylist }
-    findings { count { value } }
-}"""
-
-
-async def handle_onboard(args: dict, **kwargs) -> str:
-    """Gather full Caido context in one call."""
-    try:
-        # Layer 1: Health check
-        health_ok = False
-        try:
-            h = await health()
-            health_ok = h.get("status") == "ok"
-        except Exception:
-            pass
-
-        if not health_ok:
-            return json.dumps({
-                "health": {"status": "unreachable"},
-                "message": (
-                    "Cannot reach Caido instance. Check that it is running and the URL is correct. "
-                    "Run caido_auth_setup to configure credentials."
-                ),
-            }, indent=2)
-
-        # Layer 2: Auth check — try a simple query
-        auth_ok = False
-        auth_error = None
-        try:
-            data = await graphql(_ONBOARD_QUERY)
-            auth_ok = True
-        except Exception as e:
-            auth_error = str(e)
-            data = {}
-
-        if not auth_ok:
-            return json.dumps({
-                "health": {"status": "ok"},
-                "auth": {"authenticated": False, "error": auth_error},
-                "message": (
-                    "Not authenticated. Run caido_auth_setup "
-                    "to configure credentials."
-                ),
-            }, indent=2)
-
-        # Layer 3: Parse results
-        project_data = data.get("currentProject", {})
-        project = project_data.get("project", {})
-        intercept = data.get("interceptOptions", {})
-        scopes = data.get("scopes", [])
-        findings_count = (data.get("findings") or {}).get("count", {}).get("value", 0)
-
-        # Layer 4: Recent traffic summary (lightweight)
-        recent_hosts = []
-        recent_count = 0
-        try:
-            recent_result = await search(query="", limit=50, sort="createdAt", order="DESC")
-            entries = recent_result.get("entries", [])
-            recent_count = len(entries)
-            recent_hosts = list({e["host"] for e in entries if "host" in e})[:10]
-        except Exception:
-            pass
-
-        # Layer 4b: Suggest scope by matching recent hosts against scope allowlists
-        suggested_scope = None
-        if recent_hosts and scopes:
-            from fnmatch import fnmatch
-            best_score = 0
-            for scope in scopes:
-                allowlist = scope.get("allowlist", [])
-                score = sum(
-                    1 for host in recent_hosts
-                    for pattern in allowlist
-                    if fnmatch(host, pattern) or fnmatch(host, f"*{pattern}*") or host == pattern
-                )
-                if score > best_score:
-                    best_score = score
-                    suggested_scope = {"id": scope["id"], "name": scope["name"], "matched_hosts": [
-                        host for host in recent_hosts
-                        for pattern in allowlist
-                        if fnmatch(host, pattern) or fnmatch(host, f"*{pattern}*") or host == pattern
-                    ]}
-
-        # Layer 5: Hosted files
-        hosted = []
-        try:
-            files = await hosted_files()
-            hosted = [f["name"] for f in files if isinstance(f, dict) and "name" in f]
-        except Exception:
-            pass
-
-        # Set the suggested scope as active for subsequent search/recent calls
-        active_scope_id = None
-        if suggested_scope:
-            from .lib.graphql.http_requests import set_active_scope, get_active_scope
-            set_active_scope(suggested_scope["id"])
-            active_scope_id = get_active_scope()
-
-        return json.dumps({
-            "health": {"status": "ok"},
-            "auth": {"authenticated": True},
-            "next_step": (
-                "Call skill_view(\"caido:caido\") to load the cookbook — tool map, "
-                "replay/automate decisions, payload encoding, pitfalls — before any "
-                "Caido work."
-            ),
-            "project": {
-                "name": project.get("name"),
-                "id": project.get("id"),
-                "status": project.get("status"),
-                "size_mb": round(project.get("size", 0) / 1024 / 1024, 1),
-            },
-            "scopes": [
-                {"id": s["id"], "name": s["name"], "allowlist": s.get("allowlist", [])}
-                for s in scopes
-            ],
-            "intercept": {
-                "request": intercept.get("request", {}).get("enabled"),
-                "response": intercept.get("response", {}).get("enabled"),
-                "scope_id": (intercept.get("scope") or {}).get("scopeId"),
-            },
-            "suggested_scope": suggested_scope,
-            "active_scope": active_scope_id,
-            "recent": {"count": recent_count, "hosts": recent_hosts},
-            "findings_count": findings_count,
-            "hosted_files": hosted,
-            "workspace": {
-                "note": (
-                    "Caido is the shared workspace: traffic you replay, automate runs, "
-                    "and findings you create appear in the UI the user is watching. "
-                    "Use Caido tools when the user should see or build on the work. "
-                    "When you're exploring independently and the user doesn't need "
-                    "to watch, use terminal tools (curl/ffuf) instead — they're "
-                    "faster and don't clutter the shared history. "
-                ),
-            },
-        }, indent=2)
-
-    except Exception as e:
-        error_str = str(e)
-        result = {"error": error_str}
-        if any(kw in error_str.lower() for kw in ["auth", "token", "pat", "401", "403", "forbidden"]):
-            result["message"] = (
-                "Run caido_auth_setup to configure credentials."
-            )
-        return json.dumps(result, indent=2)

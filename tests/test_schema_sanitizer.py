@@ -15,7 +15,7 @@ from conftest import _NS_PARENT, load_plugin
 import sys  # noqa: E402
 
 # Names of every registered tool, for the empty-properties exception.
-ALLOWED_EMPTY = {"caido_onboard", "caido_health"}  # take no arguments
+ALLOWED_EMPTY = {"caido_health"}  # take no arguments
 
 
 def _schemas():

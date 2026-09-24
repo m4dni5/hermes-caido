@@ -6,11 +6,10 @@ export requests as curl — all visible in the Caido UI you're watching.
 
 ## What It Does
 
-**13 tools** for Caido operations:
+**12 tools** for Caido operations:
 
 | Tool | Description |
 |---|---|
-| `caido_onboard` | Connect and gather full context — project, scopes, traffic, findings |
 | `caido_health` | Check Caido connectivity |
 | `caido_search` | Search proxy history with HTTPQL |
 | `caido_recent` | Get recent intercepted requests |
@@ -43,9 +42,9 @@ to complete the device-code flow.
 
 ## Usage
 
-Start with the onboard tool, then ask naturally:
+No onboarding step needed — the agent's first Caido call automatically
+returns project/scope context. Ask naturally:
 
-> "Onboard Caido"
 > "Search Caido for requests to /api"
 > "Get request 42 from Caido"
 > "Create a finding for the IDOR I just found"
