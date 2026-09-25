@@ -1,5 +1,5 @@
 name: caido
-version: 0.7.1
+version: 0.7.2
 description: Caido HTTP proxy integration — search, replay, automate campaigns, findings, export curl, auth setup.
 
 Session orientation is automatic: the first read call returns project/scope context.

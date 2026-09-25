@@ -55,7 +55,7 @@ Orientation is automatic: your first Caido read call returns a one-time
 |---|---|
 | Find a request | `caido_search(query, compact: true)` |
 | See recent traffic | `caido_recent` |
-| Inspect a request/response | `caido_get(request_id)` |
+| Inspect a request/response | `caido_get(request_id)` — bounded by default (cookies digested, bodies truncated); `full=true` / `raw=true` / `redact_cookies=false` for verbatim |
 | Record a vulnerability | `caido_create_finding(title, request_id, severity)` |
 | Review findings | `caido_findings` |
 | Remove a finding | `caido_delete_finding(finding_id)` |
@@ -157,7 +157,13 @@ Full reference: `skill_view("caido:caido", "references/httpql.md")`. Key
 facts:
 
 - Syntax `namespace.field.operator:value` — strings quoted, ints/booleans
-  unquoted: `req.path.cont:"/admin"`
+  unquoted: `req.path.cont:"/admin"`. The operator is **never** optional
+  (`req.path.cont:"/x"`, not `req.path:"/x"`)
+- `caido_search` auto-repairs common shorthand before the query runs —
+  missing operators (`field:"v"` → `field.cont:"v"`, or `.eq` on int/bool
+  fields), unquoted/single-quoted values, bare strings (expanded like the
+  UI). Every rewrite is reported in the response's `httpql` block, so
+  nothing is silent
 - Negate with `ncont` / `nlike` / `ne` / `nregex`
 - Bodies/headers: targeted fields beat `raw` — `resp.body.cont:"error"`,
   `req.header["Authorization"].cont:"Bearer"`, `req.header.value.cont:"token"`;

@@ -24,6 +24,7 @@ from typing import Any
 
 
 from .client import graphql  # noqa: E402
+from .httpql import SYNTAX_HINT, normalize_httpql  # noqa: E402
 
 # Sentinel for distinguishing "not passed" from "explicitly None"
 _UNSET = object()
@@ -365,9 +366,13 @@ async def search(
             "includeResponseRaw": False,
         }
 
-        # HTTPQL filter
+        # HTTPQL filter — repair common shorthand (missing operators, bare
+        # strings, unquoted values) before it reaches the strict parser.
+        normalized = ""
+        repairs: list[str] = []
         if query:
-            variables["filter"] = {"code": query}
+            normalized, repairs = normalize_httpql(query)
+            variables["filter"] = {"code": normalized}
 
         # Sorting
         by = _SORT_MAP.get(sort, "CREATED_AT") if sort else "CREATED_AT"
@@ -389,9 +394,15 @@ async def search(
             for edge in edges
             if edge.get("node")
         ]
-        return {"entries": entries, "total": len(entries)}
+        result: dict[str, Any] = {"entries": entries, "total": len(entries)}
+        if query and normalized != query:
+            result["httpql"] = {"query": normalized, "repairs": repairs}
+        return result
     except Exception as exc:
-        return {"error": str(exc), "entries": [], "total": 0}
+        message = str(exc)
+        if "Invalid HTTPQL query" in message:
+            message = f"{message} — {SYNTAX_HINT}"
+        return {"error": message, "entries": [], "total": 0}
 
 
 async def recent(

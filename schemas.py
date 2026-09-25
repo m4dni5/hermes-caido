@@ -20,9 +20,14 @@ CAIDO_SEARCH = {
         "Search the Caido **proxy history** — the log of all HTTP traffic that "
         "passed through the proxy — using HTTPQL queries. Use this to find "
         "requests matching specific criteria.\n"
-        "HTTPQL syntax: namespace.field.operator:value — strings QUOTED, "
-        "integers/booleans unquoted; negation with ne/ncont/nlike/nregex; "
-        "combine with AND/OR (AND binds tighter).\n"
+        "HTTPQL syntax: namespace.field.operator:value — the operator is "
+        "NEVER optional (write req.path.cont:\"/graphql\", not "
+        "req.path:\"/graphql\"); strings QUOTED, integers/booleans "
+        "unquoted; negation with ne/ncont/nlike/nregex; combine with AND/OR "
+        "(AND binds tighter). Common shorthand is auto-repaired before the "
+        "query runs (missing operator, unquoted/single-quoted values, bare "
+        "strings) and every rewrite is reported in the response's httpql "
+        "block.\n"
         "Fields — request: req.path req.host req.method req.query req.ext "
         "req.port req.tls req.len req.created_at req.raw req.body "
         "req.header.name / req.header.value / req.header[\"Name\"] — response: "
@@ -121,7 +126,13 @@ CAIDO_GET = {
         "caido_search/caido_recent, AND the number shown in the Caido UI history "
         "table (the UI number is the request's metadata id — caido_get resolves "
         "it automatically). Use this to inspect a request/response pair after "
-        "finding it via caido_search or caido_recent."
+        "finding it via caido_search or caido_recent.\n"
+        "Output is **bounded by default**: cookie values are digested to "
+        "names/flags, oversized header values capped, and bodies truncated at "
+        "2000 chars. Do NOT avoid this tool because a request looks cookie-heavy "
+        "or large — the default view is cheap by design. Escape hatches: "
+        "full=true (verbatim raw HTTP bytes alongside the parsed view), "
+        "raw=true (just the raw text), redact_cookies=false (cookie values)."
     ),
     "parameters": {
         "type": "object",
@@ -130,10 +141,20 @@ CAIDO_GET = {
                 "type": "string",
                 "description": "Request ID to retrieve — either the id from caido_search/caido_recent output, or the number shown in the Caido UI history table.",
             },
+            "full": {
+                "type": "boolean",
+                "description": "Include the verbatim raw HTTP bytes (requestRaw/responseRaw) alongside the parsed view (default false).",
+                "default": False,
+            },
             "raw": {
                 "type": "boolean",
-                "description": "Return the raw HTTP bytes instead of parsed format (default false).",
+                "description": "Return only the raw HTTP bytes as text (request + response), nothing else (default false).",
                 "default": False,
+            },
+            "redact_cookies": {
+                "type": "boolean",
+                "description": "Digest cookie values in the parsed view (default true): request Cookie → names only, Set-Cookie → value redacted with attributes (HttpOnly/Secure/SameSite/Path) kept. Set false for verbatim cookie values.",
+                "default": True,
             },
             "compact": {
                 "type": "boolean",

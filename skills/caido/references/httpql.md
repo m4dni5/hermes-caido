@@ -137,7 +137,10 @@ runtime by:
 (req.raw.cont:"my value" OR resp.raw.cont:"my value")
 ```
 
-Write the expansion explicitly in `caido_search` queries.
+`caido_search` applies this expansion automatically for bare strings (and
+repairs missing operators / unquoted values), reporting each rewrite in the
+response's `httpql` block. Write the expansion explicitly in queries passed
+to library functions (`create_filter`, `get_entry_requests`).
 
 ## Verified patterns
 

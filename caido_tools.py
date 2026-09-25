@@ -28,7 +28,7 @@ from .lib.graphql.management import (
 )
 from .lib.graphql.auth import setup as _auth_setup
 from .lib.graphql.client import health
-from .lib.output import format_entry_compact, format_response
+from .lib.output import format_entry_compact, format_response, build_get_view
 
 import asyncio
 import os
@@ -106,8 +106,15 @@ def _format(data: dict, args: dict) -> str:
         # Handle search results (dict with entries key)
         entries = data.get("entries", [data]) if isinstance(data, dict) else data
         if isinstance(entries, list):
-            return "\n".join(format_entry_compact(e) for e in entries)
-        return format_entry_compact(entries)
+            body = "\n".join(format_entry_compact(e) for e in entries)
+        else:
+            body = format_entry_compact(entries)
+        # Surface HTTPQL shorthand repairs even in compact mode — the
+        # rewrite must never be silent.
+        repairs = (data.get("httpql") or {}).get("repairs") if isinstance(data, dict) else None
+        if repairs:
+            return "httpql repaired: " + "; ".join(repairs) + "\n" + body
+        return body
     return json.dumps(data)
 
 
@@ -162,9 +169,21 @@ async def handle_get(args: dict, **kwargs) -> str:
         from .lib.graphql.context import ensure_context
         context_block = await ensure_context()
         data = await get(request_id=args["request_id"])
-        if context_block and "error" not in data:
+        if "error" in data:
+            return json.dumps(data, indent=2)
+        if context_block:
             data["context"] = context_block
-        return _format(data, args)
+        if args.get("raw"):
+            # Verbatim raw HTTP text — request + response, nothing else.
+            return f"{data.get('requestRaw') or ''}\n\n{data.get('responseRaw') or ''}"
+        # Bounded parsed view by default: cookie values digested, bodies
+        # truncated. full=true adds the verbatim raw bytes; the raws always
+        # flow through lib's get() unchanged (automate depends on them).
+        view = build_get_view(data, redact_cookies=args.get("redact_cookies", True))
+        if args.get("full"):
+            view["requestRaw"] = data.get("requestRaw") or ""
+            view["responseRaw"] = data.get("responseRaw") or ""
+        return _format(view, args)
     except Exception as e:
         return json.dumps({"error": str(e)})
 

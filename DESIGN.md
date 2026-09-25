@@ -17,7 +17,7 @@ be the best possible automate engine.
 
 ```
 hermes-caido/
-├── __init__.py              # Plugin registration — 13 tools + 1 skill
+├── __init__.py              # Plugin registration — 12 tools + 1 skill
 ├── plugin.yaml              # Plugin metadata (name, version, env vars)
 ├── schemas.py               # JSON Schema for registered tools
 ├── caido_tools.py           # Async tool handlers (called by Hermes)
@@ -50,7 +50,7 @@ wasteful.
 **Tool-first (tool-search era).** Hermes uses progressive tool disclosure: all
 non-core tools sit behind `tool_search`/`tool_describe`/`tool_call`, and schemas
 load on demand. The old context-cost rationale for hiding operations in skills
-is gone — every operation an agent-operator performs is a registered tool (13
+is gone — every operation an agent-operator performs is a registered tool (12
 total), and the descriptions carry the decisions. The one remaining skill
 (`caido:caido`) is the agent-operator cookbook — shared-workspace guidance, tool
 map, replay/automate decisions, pitfalls — the judgment layer that doesn't fit a
@@ -95,6 +95,32 @@ falls back to a `requestsByOffset` scan by `metadata.id`. `caido_get`,
 `caido_replay`, `caido_automate`, and `caido_export_curl` accept both namespaces
 automatically. Verified live: get(3618) → 5218, ambiguous matches surface all
 candidates rather than guessing.
+
+**HTTPQL shorthand is repaired, not rejected (v0.7.2).** Caido's HTTPQL
+parser is strict — the operator is never optional, string values must be
+double-quoted, and the UI's bare-string expansion doesn't exist server-side —
+but agents reliably write the shorthand anyway (`req.path:"/graphql"`), and
+their first search of a session errored out. Fighting grab-and-go loses (same
+lesson as the context envelope): `lib/graphql/httpql.py` normalizes the query
+before it is sent and `search()` reports every rewrite in the response's
+`httpql` block. The contract is narrow — only forms that would fail anyway are
+touched; a query the server accepts passes through byte-identical (pinned by
+tests). Missing operators repair to `cont` on string fields (case-insensitive
+substring — a superset of `eq`, so nothing is silently missed) and `eq` on
+int/bool fields. Unknown fields and date fields are left alone; the error hint
+carries the syntax rules plus the skill pointer.
+
+**`caido_get` returns a bounded view by default (v0.7.2).** The old default
+dumped the full `_map_node` with both raw messages — on cookie-heavy exchanges
+that meant 15KB+ per call, and the observed agent behavior was to *avoid*
+`caido_get` entirely rather than flood its context. The default is now a parsed
+view: cookie values digested to names/flags (the security-relevant part of
+Set-Cookie — attributes — is kept), header values capped at 1000 chars, bodies
+truncated at 2000 chars. Escape hatches: `full=true` (verbatim raw bytes),
+`raw=true` (raw text only), `redact_cookies=false` (cookie values, verbatim and
+never truncated — an escape hatch must actually escape). `lib`'s `get()` still
+returns the raws unchanged for automate/replay. The schema description says
+plainly not to avoid the tool on cookie-heavy requests.
 
 **FUZZ slot pattern for placeholders.** Modify the raw request to embed `FUZZ`
 at the target location, then call `find_value(template, "FUZZ")` to get byte
@@ -195,10 +221,14 @@ PYTHONPATH=/path/to/hermes-agent \
 ```
 
 Layout:
-- `tests/test_plugin_load.py` — loader semantics, 13-tool registration,
+- `tests/test_plugin_load.py` — loader semantics, 12-tool registration,
   no-sys.path-mutation guard, sync-wrapper imports.
 - `tests/test_schema_sanitizer.py` — schemas survive `sanitize_tool_schemas`
   with `properties`/`required` intact, no top-level combinators.
+- `tests/test_httpql.py` — shorthand repair contract: failing forms repaired,
+  valid queries byte-identical, idempotent.
+- `tests/test_output.py` — bounded `caido_get` view: cookie digestion,
+  header/body caps, escape hatches verbatim.
 
 ## Environment
 

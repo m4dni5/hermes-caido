@@ -1,9 +1,9 @@
 # TODO — hermes-caido
 
-> Last reviewed: 2026-08-10
+> Last reviewed: 2026-09-25
 > Caido latest: **v0.57.1** (2026-07-10) — schema unchanged from v0.57.0
 > Hermes: tool-search (progressive tool disclosure) active in default profile
-> Current: 13 tools + `caido:caido` cookbook (v0.7.0)
+> Current: 12 tools + `caido:caido` cookbook (v0.7.2)
 
 ## Open Work
 
@@ -27,6 +27,7 @@
 
 ## Recently Completed (don't redo)
 
+- **HTTPQL shorthand repair + bounded `caido_get` (v0.7.2)** — `search()` normalizes common shorthand (`lib/graphql/httpql.py`: missing operators, unquoted/single-quoted values, bare strings) and reports rewrites in the response's `httpql` block; residual parse errors carry a syntax hint. `caido_get` default output is a bounded parsed view (cookies digested, headers capped, bodies truncated) so agents stop avoiding it on cookie-heavy exchanges; `full`/`raw`/`redact_cookies=false` are verbatim escape hatches. Verified live read-only 2026-09.
 - **Onboard removed; grab-and-go context (v0.7.1)** — `caido_onboard` deleted; agents were skipping it anyway. First read call (search/recent/get) now carries a one-time `context` block via `lib/graphql/context.py` (project, scopes, auto-selected active scope). Skill pointer moved into `caido_search`/`caido_recent` descriptions.
 - **HTTPQL header/body fields verified (Caido v0.58)** — `req.header.name/value/["Name"]`, `req.body`, `resp.*` equivalents verified live read-only (2026-09); documented in `references/httpql.md` and the `caido_search` description (old "no body/header fields, use raw" guidance corrected). Replay Pipeline (v0.58) deferred — see open items.
 - **12-tool surface + 1 skill (v0.7.x)** — tool-search era: health/search/recent/get/findings/create_finding/delete_finding/replay/automate/automate_status/export_curl/auth_setup. Schema descriptions carry decisions; skill carries the cookbook.
