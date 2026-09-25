@@ -183,15 +183,18 @@ def _map_node(node: dict[str, Any]) -> dict[str, Any]:
     }
 
     # Include raw bytes when fetched (includeRequestRaw/includeResponseRaw=True)
-    # Decode base64 (GraphQL Blob type)
+    # Decode base64 (GraphQL Blob type). errors="replace": binary bodies
+    # (e.g. deflate-compressed) must not push the whole message back to a
+    # base64 fallback — headers are ASCII and parse fine either way, and
+    # only the undecodable body bytes become U+FFFD.
     if node.get("raw") is not None:
         try:
-            result["requestRaw"] = base64.b64decode(node["raw"]).decode("utf-8")
+            result["requestRaw"] = base64.b64decode(node["raw"]).decode("utf-8", errors="replace")
         except Exception:
             result["requestRaw"] = node["raw"]
     if resp.get("raw") is not None:
         try:
-            result["responseRaw"] = base64.b64decode(resp["raw"]).decode("utf-8")
+            result["responseRaw"] = base64.b64decode(resp["raw"]).decode("utf-8", errors="replace")
         except Exception:
             result["responseRaw"] = resp["raw"]
 
@@ -548,11 +551,12 @@ async def export_curl(
         host = node.get("host", "")
         port = node.get("port", 443 if is_tls else 80)
 
-        # Decode base64 raw bytes (GraphQL Blob type)
+        # Decode base64 raw bytes (GraphQL Blob type); per-byte replace for
+        # binary bodies (see _map_node).
         raw = ""
         if raw_b64:
             try:
-                raw = base64.b64decode(raw_b64).decode("utf-8")
+                raw = base64.b64decode(raw_b64).decode("utf-8", errors="replace")
             except Exception:
                 raw = raw_b64  # Fallback to treating as plain string
 

@@ -156,3 +156,78 @@ class TestBuildGetView:
     def test_notes_present_by_default(self):
         view = output.build_get_view(SAMPLE)
         assert any("redact_cookies=false" in n for n in view["notes"])
+
+
+class TestBinaryBodyRawDecode:
+    """Regression (bridge drive 2026-09): a binary body (e.g. deflate) must
+    not push the whole raw message back to a base64 fallback — headers must
+    still parse in the bounded view."""
+
+    def test_binary_body_decodes_with_replacement(self):
+        import base64 as b64
+        http_requests = importlib.import_module(f"{_NS_PARENT}.caido.lib.graphql.http_requests")
+        raw_bytes = b"POST /x HTTP/1.1\r\nHost: app.example\r\n\r\n" + b"\x9c\x02\x8b\x03binary"
+        node = {"id": "1", "raw": b64.b64encode(raw_bytes).decode(), "response": None}
+        mapped = http_requests._map_node(node)
+        assert not mapped["requestRaw"].startswith("UE9TV")  # not base64
+        parsed = output.parse_raw_http(mapped["requestRaw"])
+        assert parsed["headers"] == [{"name": "Host", "value": "app.example"}]
+        assert "\ufffd" in parsed["body"]
+
+    def test_view_headers_present_for_binary_body(self):
+        import base64 as b64
+        http_requests = importlib.import_module(f"{_NS_PARENT}.caido.lib.graphql.http_requests")
+        raw_bytes = b"GET /y HTTP/1.1\r\nCookie: a=1\r\n\r\n" + b"\x9c\x02"
+        node = {"id": "2", "raw": b64.b64encode(raw_bytes).decode(), "response": None}
+        mapped = http_requests._map_node(node)
+        view = output.build_get_view(mapped)
+        assert {"name": "Cookie", "value": "[1 cookies] a"} in view["requestHeaders"]
+
+
+class TestCompactFormat:
+    """Compact output must carry the context envelope and httpql repairs."""
+
+    ENTRY = {
+        "id": "10", "host": "app.example", "port": 443, "method": "GET",
+        "path": "/x", "query": "", "isTls": True, "createdAt": 1700000000000,
+        "statusCode": 200, "roundtripTime": 5, "length": 3,
+        "metadata": {"id": "10", "color": None},
+    }
+    CTX = {
+        "project": {"name": "proj", "id": "p1", "status": "open"},
+        "active_scope": "2",
+        "suggested_scope": {"id": "2", "name": "target", "matched_hosts": ["app.example"]},
+        "recent_hosts": ["app.example", "cdn.example"],
+    }
+
+    def _format(self, data):
+        tools = importlib.import_module(f"{_NS_PARENT}.caido.caido_tools")
+        return tools._format(data, {"compact": True})
+
+    def test_context_line_present(self):
+        out = self._format({"entries": [self.ENTRY], "context": self.CTX})
+        lines = out.split("\n")
+        assert lines[0].startswith("context: project=proj")
+        assert "active_scope=target (id 2" in lines[0]
+        assert "app.example" in lines[0]
+        assert lines[1] == "10 GET app.example/x [200] 3B 1700000000000"
+
+    def test_context_none_set(self):
+        ctx = dict(self.CTX, active_scope=None, suggested_scope=None)
+        out = self._format({"entries": [self.ENTRY], "context": ctx})
+        assert "active_scope=none" in out.split("\n")[0]
+
+    def test_context_then_repairs_then_entries(self):
+        out = self._format({
+            "entries": [self.ENTRY],
+            "context": self.CTX,
+            "httpql": {"query": 'req.path.cont:"/x"', "repairs": ['req.path:"/x" → req.path.cont:"/x" (missing operator → cont)']},
+        })
+        lines = out.split("\n")
+        assert lines[0].startswith("context:")
+        assert lines[1].startswith("httpql repaired:")
+        assert lines[2].startswith("10 GET ")
+
+    def test_no_prefix_without_signals(self):
+        out = self._format({"entries": [self.ENTRY]})
+        assert out.split("\n") == ["10 GET app.example/x [200] 3B 1700000000000"]

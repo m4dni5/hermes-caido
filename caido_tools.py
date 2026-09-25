@@ -96,6 +96,27 @@ async def _setup_via_subprocess(pat: str | None = None, url: str | None = None) 
 # ---------------------------------------------------------------------------
 
 
+def _context_line(ctx: dict) -> str:
+    """One-line digest of the context envelope for compact output.
+
+    The envelope is the session's ONLY orientation (project + auto-selected
+    scope) — compact mode must not swallow it.
+    """
+    project = (ctx.get("project") or {}).get("name") or "?"
+    scope_id = ctx.get("active_scope")
+    suggestion = ctx.get("suggested_scope") or {}
+    if scope_id:
+        name = suggestion.get("name") or scope_id
+        scope = f'active_scope={name} (id {scope_id}; scope_id="" for all history)'
+    else:
+        scope = "active_scope=none (pass scope_id or ask the user)"
+    line = f"context: project={project} {scope}"
+    hosts = ", ".join((ctx.get("recent_hosts") or [])[:3])
+    if hosts:
+        line += f" | recent hosts: {hosts}"
+    return line + ' | skill_view("caido:caido")'
+
+
 def _format(data: dict, args: dict) -> str:
     """Apply formatting based on args flags."""
     if args.get("raw"):
@@ -109,11 +130,18 @@ def _format(data: dict, args: dict) -> str:
             body = "\n".join(format_entry_compact(e) for e in entries)
         else:
             body = format_entry_compact(entries)
-        # Surface HTTPQL shorthand repairs even in compact mode — the
-        # rewrite must never be silent.
+        # Compact output must not swallow one-time or per-query signals:
+        # the context envelope (orientation) and HTTPQL shorthand repairs
+        # (never silent) ride along as prefix lines.
+        prefixes = []
+        ctx = data.get("context") if isinstance(data, dict) else None
+        if ctx:
+            prefixes.append(_context_line(ctx))
         repairs = (data.get("httpql") or {}).get("repairs") if isinstance(data, dict) else None
         if repairs:
-            return "httpql repaired: " + "; ".join(repairs) + "\n" + body
+            prefixes.append("httpql repaired: " + "; ".join(repairs))
+        if prefixes:
+            return "\n".join(prefixes) + "\n" + body
         return body
     return json.dumps(data)
 
