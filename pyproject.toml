@@ -1,10 +1,6 @@
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "hermes-caido"
-version = "0.7.0"
+version = "0.7.3"
 description = "Hermes Agent plugin for the Caido HTTP proxy"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,8 +8,12 @@ dependencies = [
     "aiohttp>=3.9",
 ]
 
-[tool.setuptools]
-packages = ["caido"]
+# Directory plugin, not a pip package: the Hermes loader imports this folder
+# in place (hermes_plugins.<name>), so there is nothing to build. Declaring a
+# build backend makes PM treat the plugin as a buildable workspace member and
+# invoke setuptools on it, which fails. Keep it metadata-only.
+[tool.uv]
+package = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
