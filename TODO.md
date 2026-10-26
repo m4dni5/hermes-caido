@@ -3,7 +3,7 @@
 > Last reviewed: 2026-10-26
 > Caido latest: **v0.59.0** (2026-10-26) — reviewed against the plugin surface: additive only, no break (schema-proxy diff 0.57.0 → 0.59.0, plus live introspection: all 26 plugin root ops present, read-path smoke passed); repo schema still vendored at v0.57.0
 > Hermes: tool-search (progressive tool disclosure) active in default profile
-> Current: 12 tools + `caido:caido` cookbook (v0.7.2)
+> Current: 12 tools + `caido:caido` cookbook (v0.7.3 — profile-aware env resolution)
 
 ## Open Work
 

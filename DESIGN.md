@@ -234,8 +234,11 @@ Layout:
 
 - **Plugin path:** `CAIDO_PLUGIN_DIR` env var (set automatically during
   registration, works under any profile)
-- **Hermes home:** `HERMES_HOME` env var if set (profile-aware), otherwise
-  `~/.hermes/`
+- **Hermes home:** `hermes_constants.get_hermes_home()` inside the Hermes
+  process (context-local profile override → env var → default; the gateway
+  process env carries the DEFAULT root while serving a named profile), else
+  `HERMES_HOME` env var → `~/.hermes/` for standalone scripts. Resolved per
+  call, never cached at import.
 - **Token cache:** `<hermes_home>/cache/caido-token.json`
 - **Caido URL/PAT:** `<hermes_home>/.env` or env vars `CAIDO_URL` / `CAIDO_PAT`
   (required — all instances, including local, require auth)

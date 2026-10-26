@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 from .client import (
-    _HERMES_ENV, _CLAUDE_SECRETS, _HERMES_CACHE,
+    _hermes_env_path, _CLAUDE_SECRETS, _hermes_cache_path,
     _resolve_pat, _resolve_url, _load_cached_token,
     _save_cached_token, _do_device_flow,
     graphql, health,
@@ -40,11 +40,11 @@ async def auth_status() -> dict:
     pat = os.environ.get("CAIDO_PAT")
     if pat:
         result["pat_source"] = "env:CAIDO_PAT"
-    elif _HERMES_ENV.is_file():
+    elif _hermes_env_path().is_file():
         try:
-            for line in _HERMES_ENV.read_text().splitlines():
+            for line in _hermes_env_path().read_text().splitlines():
                 if line.strip().startswith("CAIDO_PAT"):
-                    result["pat_source"] = f"file:{_HERMES_ENV}"
+                    result["pat_source"] = f"file:{_hermes_env_path()}"
                     break
         except Exception:
             pass
@@ -60,11 +60,11 @@ async def auth_status() -> dict:
     url = os.environ.get("CAIDO_URL")
     if url:
         result["url_source"] = "env:CAIDO_URL"
-    elif _HERMES_ENV.is_file():
+    elif _hermes_env_path().is_file():
         try:
-            for line in _HERMES_ENV.read_text().splitlines():
+            for line in _hermes_env_path().read_text().splitlines():
                 if line.strip().startswith("CAIDO_URL"):
-                    result["url_source"] = f"file:{_HERMES_ENV}"
+                    result["url_source"] = f"file:{_hermes_env_path()}"
                     break
         except Exception:
             pass
@@ -78,7 +78,7 @@ async def auth_status() -> dict:
 
     # Check token cache
     from datetime import datetime, timezone
-    for cache_path in [_HERMES_CACHE, _CLAUDE_SECRETS]:
+    for cache_path in [_hermes_cache_path(), _CLAUDE_SECRETS]:
         if not cache_path.is_file():
             continue
         try:
@@ -129,9 +129,9 @@ async def clear_cache() -> dict:
     await close_client()
 
     # Clear token cache
-    if _HERMES_CACHE.is_file():
-        _HERMES_CACHE.unlink()
-        cleared.append(str(_HERMES_CACHE))
+    if _hermes_cache_path().is_file():
+        _hermes_cache_path().unlink()
+        cleared.append(str(_hermes_cache_path()))
 
     # Clear cached token from secrets.json
     if _CLAUDE_SECRETS.is_file():

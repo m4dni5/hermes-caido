@@ -28,15 +28,38 @@ logger = logging.getLogger(__name__)
 # ── paths ──────────────────────────────────────────────────────────────
 
 def _hermes_home() -> Path:
-    """Return Hermes home — respects HERMES_HOME env var (profile-aware)."""
+    """Return the Hermes home for the ACTIVE profile — resolved per call.
+
+    Inside the Hermes process, ``hermes_constants.get_hermes_home()`` is the
+    single source of truth: it honors the per-session context-local profile
+    override, which deliberately does NOT touch ``os.environ`` (gateway
+    processes carry the DEFAULT root in HERMES_HOME while serving a named
+    profile — reading the env var reads the wrong profile's .env/cache;
+    ares bug 2026-10-26). Standalone scripts (hermes not on sys.path) fall
+    back to HERMES_HOME → platform default.
+    """
+    try:
+        from hermes_constants import get_hermes_home
+        return Path(get_hermes_home())
+    except ImportError:
+        pass
     import os
     override = os.environ.get("HERMES_HOME")
     if override:
         return Path(override)
     return Path.home() / ".hermes"
 
-_HERMES_ENV = _hermes_home() / ".env"
-_HERMES_CACHE = _hermes_home() / "cache" / "caido-token.json"
+
+def _hermes_env_path() -> Path:
+    """<hermes_home>/.env — the ACTIVE profile's env, resolved at call time."""
+    return _hermes_home() / ".env"
+
+
+def _hermes_cache_path() -> Path:
+    """<hermes_home>/cache/caido-token.json — resolved at call time."""
+    return _hermes_home() / "cache" / "caido-token.json"
+
+
 _CLAUDE_SECRETS = Path.home() / ".claude" / "config" / "secrets.json"
 _CLOUD_API = "https://api.caido.io"
 
@@ -112,7 +135,7 @@ def _resolve_pat() -> str:
     if pat:
         return pat
 
-    dotenv = _load_dotenv(_HERMES_ENV)
+    dotenv = _load_dotenv(_hermes_env_path())
     pat = pat or dotenv.get("CAIDO_PAT")
 
     if not pat and _CLAUDE_SECRETS.is_file():
@@ -124,7 +147,7 @@ def _resolve_pat() -> str:
 
     if not pat:
         raise RuntimeError(
-            f"Missing CAIDO_PAT. Set as env var or in {_HERMES_ENV}. "
+            f"Missing CAIDO_PAT. Set as env var or in {_hermes_env_path()}. "
             "Run caido_auth_setup to configure credentials."
         )
     return pat
@@ -136,7 +159,7 @@ def _resolve_url() -> str:
     if url:
         return url
 
-    dotenv = _load_dotenv(_HERMES_ENV)
+    dotenv = _load_dotenv(_hermes_env_path())
     url = url or dotenv.get("CAIDO_URL")
 
     if not url and _CLAUDE_SECRETS.is_file():
@@ -147,7 +170,7 @@ def _resolve_url() -> str:
             pass
 
     if not url:
-        raise RuntimeError(f"Missing CAIDO_URL. Set as env var or in {_HERMES_ENV}.")
+        raise RuntimeError(f"Missing CAIDO_URL. Set as env var or in {_hermes_env_path()}.")
     return url
 
 
@@ -157,7 +180,7 @@ def _load_cached_token() -> bool:
     """Load cached token. Returns True if valid and not expired."""
     global _access_token, _refresh_token, _expires_at
 
-    for cache_path in [_HERMES_CACHE, _CLAUDE_SECRETS]:
+    for cache_path in [_hermes_cache_path(), _CLAUDE_SECRETS]:
         if not cache_path.is_file():
             continue
         try:
@@ -182,7 +205,7 @@ def _load_cached_token() -> bool:
 
 def _save_cached_token() -> None:
     """Persist token to cache."""
-    _HERMES_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    _hermes_cache_path().parent.mkdir(parents=True, exist_ok=True)
     data: dict[str, Any] = {}
     if _access_token:
         data["accessToken"] = _access_token
@@ -190,7 +213,7 @@ def _save_cached_token() -> None:
         data["refreshToken"] = _refresh_token
     if _expires_at:
         data["expiresAt"] = _expires_at.isoformat()
-    _HERMES_CACHE.write_text(json.dumps(data, indent=2))
+    _hermes_cache_path().write_text(json.dumps(data, indent=2))
 
 
 # ── OAuth2 device code flow (via GraphQL + websocket) ─────────────────

@@ -54,6 +54,14 @@ async def _setup_via_subprocess(pat: str | None = None, url: str | None = None) 
     # Find the Python with aiohttp installed — same one running this plugin
     venv_python = sys.executable
 
+    # The helper resolves <hermes_home>/.env + token cache standalone (no
+    # hermes on its sys.path, so it uses the HERMES_HOME env fallback). The
+    # gateway process env carries the DEFAULT root while serving a named
+    # profile — hand the child the session's actual profile home explicitly,
+    # or the token lands in the wrong profile's cache (ares bug 2026-10-26).
+    from .lib.graphql.client import _hermes_home
+    child_env = {**os.environ, "HERMES_HOME": str(_hermes_home())}
+
     try:
         proc = await asyncio.get_event_loop().run_in_executor(
             None,
@@ -63,6 +71,7 @@ async def _setup_via_subprocess(pat: str | None = None, url: str | None = None) 
                 text=True,
                 timeout=60,
                 cwd=plugin_dir,
+                env=child_env,
             ),
         )
     except _subprocess.TimeoutExpired:
