@@ -45,6 +45,9 @@ one-time `context` block):
 
 When a search returns empty, re-check the active scope — the traffic is
 probably there outside it. The `context` block reports `active_scope`.
+(One exception: with Caido v0.59+'s "log only in-scope requests" traffic
+option enabled, out-of-scope traffic is never stored — `scope_id=""` stays
+empty because nothing was captured.)
 
 ## Tool Map
 

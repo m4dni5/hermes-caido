@@ -240,7 +240,7 @@ Layout:
 - **Caido URL/PAT:** `<hermes_home>/.env` or env vars `CAIDO_URL` / `CAIDO_PAT`
   (required — all instances, including local, require auth)
 - **Python executable:** `sys.executable` (same Python running the plugin)
-- **Caido schema version:** 0.57.x
+- **Caido schema version:** vendored `lib/graphql/schema.graphql` at 0.57.0; live instance 0.59.0 (all plugin root ops verified present + read-path smoke passed, 2026-10-26)
 
 Skills import the library via:
 ```python

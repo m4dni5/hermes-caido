@@ -1,7 +1,7 @@
 # TODO — hermes-caido
 
-> Last reviewed: 2026-09-25
-> Caido latest: **v0.57.1** (2026-07-10) — schema unchanged from v0.57.0
+> Last reviewed: 2026-10-26
+> Caido latest: **v0.59.0** (2026-10-26) — reviewed against the plugin surface: additive only, no break (schema-proxy diff 0.57.0 → 0.59.0, plus live introspection: all 26 plugin root ops present, read-path smoke passed); repo schema still vendored at v0.57.0
 > Hermes: tool-search (progressive tool disclosure) active in default profile
 > Current: 12 tools + `caido:caido` cookbook (v0.7.2)
 
@@ -21,9 +21,11 @@
 
 - [ ] **WebSocket replay** (v0.57.0) — `ReplayEntryWs` types in schema; no WS-session functions in `lib/graphql/replay.py`. Only if an agent-operator use case appears (low priority).
 - [ ] **StreamQL** — WS-history filtering; defer with WS replay.
-- [ ] **SDK migration** — blocked: SDK requires Python ≥3.12 (Hermes venv is 3.11.15) AND generated schema has zero `AutomateSession` references. Keep raw aiohttp GraphQL. Re-check when (a) Hermes bumps venv or SDK supports 3.11, AND (b) SDK gains AutomateSession. Partial-migration seam if ever wanted: SDK for replay/findings/scopes, keep `lib/graphql/automate.py` raw.
+- [ ] **SDK migration** — blocked: SDK requires Python ≥3.12 (Hermes venv is 3.11.15) AND generated schema has zero `AutomateSession` references. Keep raw aiohttp GraphQL. Re-check when (a) Hermes bumps venv or SDK supports 3.11, AND (b) SDK gains AutomateSession. Partial-migration seam if ever wanted: SDK for replay/findings/scopes, keep `lib/graphql/automate.py` raw. 2026-10-26 re-check: `caido-schema-proxy` 0.59.0 still requires Python ≥3.12 — gate (a) still closed.
 - **Event loop conflicts in health** — resolved-by-design: auth WebSocket runs subprocess-isolated (`_setup_via_subprocess`); regular GraphQL is loop-safe (`_current_loop` tracking + `_is_session_stale` close/recreate + one-shot retry; `sync_run` closes after each call; `close()` resets `_current_loop`). No connection issues observed since the auth rewrite. Only re-open if a session reports flaky first-call behavior.
-- [ ] **Replay Pipeline sessions** (v0.58.0) — third Replay session type (Sequential, Last Byte Synchronization) for race-condition testing; needs a schema regen (repo schema is v0.57.0) + new `lib/graphql/replay.py` functions. Only when an agent-operator race-testing use case appears.
+- [ ] **Replay Pipeline sessions** (0.58 line; v0.59.0 added SinglePacketAttack) — `ReplaySessionHttpOnePipeline` with Sequential / Last Byte Synchronization / Single Packet Attack strategies for race-condition testing; needs a schema regen (repo schema is v0.57.0) + new `lib/graphql/replay.py` functions. Only when an agent-operator race-testing use case appears. NB: the PyPI schema-proxy 0.59.0 export is a pre-final cut — the final 0.59.0 renamed the Pipeline mutations (`createReplayPipelineHttpOneSession` → `createReplayPipelineHttpSession`); regenerate from live introspection, not the export.
+- [ ] **Uncaptured-request sourcing via `createRequest`** (backend of v0.59.0's Replay cURL-import) — `CreateRequestInput` (raw + parsed parts + `source: Source!` enum) injects a request into history without a prior capture; would collapse the replay-edit→automate workaround for uncaptured params. Adopt only when that workaround bites again on a real engagement.
+- [ ] **`exportAutomateEntries`** (new in v0.59.0, `@cloud`) — on-demand automate-results export; only if cloud-sync workflows ever need it.
 
 ## Recently Completed (don't redo)
 
