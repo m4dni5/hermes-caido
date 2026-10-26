@@ -33,6 +33,7 @@ from .lib.output import format_entry_compact, format_response, build_get_view
 import asyncio
 import os
 import subprocess as _subprocess
+import sys
 
 
 async def _setup_via_subprocess(pat: str | None = None, url: str | None = None) -> dict:

@@ -241,6 +241,7 @@ async def _get_device_information(pat: str, user_code: str) -> list[str]:
             headers={
                 "Authorization": f"Bearer {pat}",
                 "Accept": "application/json",
+                "Accept-Encoding": "identity",
             },
         ) as resp:
             if resp.status < 200 or resp.status >= 300:
@@ -269,6 +270,7 @@ async def _approve_via_cloud(pat: str, user_code: str) -> None:
                 "Authorization": f"Bearer {pat}",
                 "Accept": "application/json",
                 "Content-Type": "application/json",
+                "Accept-Encoding": "identity",
             },
         ) as resp:
             if resp.status < 200 or resp.status >= 300:
