@@ -27,7 +27,7 @@ from .lib.graphql.management import (
     projects, create_project, delete_project,
 )
 from .lib.graphql.auth import setup as _auth_setup
-from .lib.graphql.client import health
+from .lib.graphql.client import health, _resolve_pat, _resolve_url
 from .lib.output import format_entry_compact, format_response, build_get_view
 
 import asyncio
@@ -303,13 +303,19 @@ async def handle_health(args: dict, **kwargs) -> str:
 async def handle_auth_setup(args: dict, **kwargs) -> str:
     """Run the device-code auth flow in an isolated subprocess."""
     try:
-        pat = args.get("pat") or os.environ.get("CAIDO_PAT") or ""
-        url = args.get("url") or os.environ.get("CAIDO_URL") or ""
-        if not pat or not url:
+        # The gateway keeps profile secrets out of os.environ (secret
+        # scope), so args/env alone are not enough in-session — fall back
+        # to the profile .env resolvers before giving up.
+        try:
+            pat = args.get("pat") or os.environ.get("CAIDO_PAT") or _resolve_pat()
+            url = args.get("url") or os.environ.get("CAIDO_URL") or _resolve_url()
+        except RuntimeError as e:
             return json.dumps({
-                "error": "PAT and URL are required for auth setup. Pass them explicitly, "
-                         "or set CAIDO_PAT / CAIDO_URL in the environment.",
-                "message": "Run caido_auth_setup to configure credentials.",
+                "error": str(e),
+                "message": (
+                    "Run caido_auth_setup with explicit pat/url, or set "
+                    "CAIDO_PAT / CAIDO_URL in the active profile's .env."
+                ),
             }, indent=2)
         result = await _setup_via_subprocess(pat=pat, url=url)
         return json.dumps(result, indent=2)

@@ -8,7 +8,8 @@ async context.
 Usage:
     python3 auth_helper.py <pat> <url>
 
-Writes token to ~/.hermes/cache/caido-token.json on success.
+Writes token to <hermes_home>/cache/caido-token.json on success (the
+active profile's cache — HERMES_HOME is handed in by the caller).
 Outputs JSON result to stdout.
 """
 
@@ -21,16 +22,20 @@ from pathlib import Path
 # real name. (Run standalone, so no parent package for relative imports.)
 sys.path.insert(0, str(Path(__file__).parent))
 
-from lib.graphql.client import _do_device_flow, _save_cached_token, _access_token, _refresh_token, _expires_at
+from lib.graphql import client as _client
+from lib.graphql.client import _do_device_flow, _save_cached_token
 
 
 async def main(pat: str, url: str) -> dict:
     try:
         await _do_device_flow(url, pat)
+        # Read _expires_at off the module at call time — importing it as a
+        # value binds the pre-flow (None) snapshot and always reports null.
+        expires_at = _client._expires_at
         return {
             "status": "success",
             "token_cached": True,
-            "expires_at": _expires_at.isoformat() if _expires_at else None,
+            "expires_at": expires_at.isoformat() if expires_at else None,
         }
     except Exception as e:
         return {"status": "error", "error": str(e)}
